@@ -225,9 +225,13 @@ Leave that session open. The first start creates `/root/.antigravity_tools/table
 
 The launcher binds `127.0.0.1` only and disables desktop auto-update. The log should include `Web UI (this machine): http://127.0.0.1:8045/` and `Listening on 127.0.0.1 only`.
 
-停掉服务用 Ctrl-C。这不是 Android 前台服务，息屏之后 vivo 可能把 Termux 杀掉。v1 不解决这件事。可选、且未在这台平板上验证的做法：安装 [Termux:API](https://f-droid.org/packages/com.termux.api/)，在 **Termux 里而不是 Debian 里** 执行 `termux-wake-lock`，并在系统电池设置里把 Termux 设为不受限制。菜单名称以 vivo 系统为准。
+停掉服务用 Ctrl-C。这个安装包没有自己的 Android 前台服务。Termux 会话还在时，Termux 自己已经有一条前台服务通知。`termux-wake-lock` 来自 Termux 自带的 `termux-tools`，不必安装 Termux:API；它只是在那条服务上再拿一把 partial wake lock。在 **Termux 里**执行，不要在 Debian 里执行。通知里能看到锁还在，才算拿到。
 
-Stop with Ctrl-C. This is not an Android foreground service. The vendor may kill Termux when the screen is off. v1 does not fix that. An optional, unverified step is `termux-wake-lock` from Termux:API plus a battery whitelist. The vivo menu names are not documented here.
+Teee 在这台 vivo 上的现场：小浮窗开着时反代还在；工作台 / 多窗，以及息屏，都会停。v1 不把唤醒锁当成保活。当前能用的办法就是这个小浮窗。选项和真机对照表在 [android-keepalive.md](./android-keepalive.md)。系统里另有一项「允许后台高耗电」（设置里搜索「后台耗电管理」），和原生的「电池不受限制」不是同一个开关，菜单名称以这台平板为准。
+
+Stop with Ctrl-C. This bundle does not install its own Android foreground service. While a Termux session exists, Termux already shows a foreground-service notification. `termux-wake-lock` comes with Termux (`termux-tools`), not Termux:API. It only adds a partial wake lock on that service. Run it in Termux, not in Debian. The notification must say the lock is held.
+
+On this vivo, a small floating window keeps the proxy up. Workbench / multi-window and a dark screen stop it. v1 does not treat the wake lock as the fix. The floating window is the setup that has worked here. Options and the device checklist are in [android-keepalive.md](./android-keepalive.md). OriginOS also has its own "allow high background power" switch, separate from Android's unrestricted-battery setting. Menu names follow the tablet.
 
 ## 5. 打开网页 / Open the UI
 
@@ -282,7 +286,7 @@ vivo 上已经见过一种失败：`proot-distro list` 有 `debian`，`login` �
 1. 用更新后的脚本（或上面的手工 tar）把包送进已经存在的 Debian 之后，`libwebkit2gtk-4.1-0` 这些包名是否都能装上。装不上时以脚本打印的 `ldd` 为准。tar 若没把 `dist/index.html` 送进去，脚本会改到 `containers/debian/rootfs` 上复制；这条备用路径也还没在平板上走过。
 2. Debian 里 `curl http://127.0.0.1:8045/health` 成功之后，平板 Chrome 是否也能打开同一个地址。
 3. 登录、粘贴 refresh token、刷新配额、以及一次 `/v1/models` 或一次最短对话是否走完本机进程。上游返回 4xx 可以接受，前提是请求确实从平板发出，并且写进了数据目录里的日志或 `proxy_logs.db`。
-4. 息屏之后进程还能活多久。v1 不保证后台常驻。
+4. 息屏和工作台下，进程是被冻住还是被杀掉。对照步骤在 [android-keepalive.md](./android-keepalive.md) 的 K0。v1 不保证后台常驻。小浮窗能活，不等于保活已经解决。
 5. `tablet.env` 里的密码在重启 proot 之后是否还能解开 `gui_config.json` 里用机器 ID 加密的字段。启动脚本每次都会重新导出 `ABV_API_KEY` 和 `ABV_WEB_PASSWORD`，所以登录不依赖那份密文。
 
 The vivo already hit one failure: `proot-distro list` shows `debian`, `login` reaches `/root`, and `$PREFIX/var/lib/proot-distro/installed-rootfs/debian` is missing, so the old script ran `install` and got `container 'debian' already exists`. The detection and tar copy above are the fix for that. `bash scripts/termux/termux-setup.sh --self-test` passed here against a fake `proot-distro`. The updated script has not been re-run on the tablet. These still need the vivo:
@@ -290,5 +294,5 @@ The vivo already hit one failure: `proot-distro list` shows `debian`, `login` re
 1. Whether the WebKit/GTK package names install after the updated script, or the manual tar commands, copies the bundle into the Debian that is already there. Trust the `ldd` output if they do not. If tar does not land `dist/index.html`, the script copies onto `containers/debian/rootfs` instead. That fallback has not been exercised on the tablet either.
 2. Whether Chrome on the tablet can open `127.0.0.1:8045` after `curl` inside Debian succeeds.
 3. Login, a pasted refresh token, a quota refresh, and one `/v1/models` or one short chat through the local process. An upstream 4xx is acceptable when the request left the tablet and was logged.
-4. How long the process survives with the screen off. v1 does not promise a background service.
+4. Whether a dark screen or workbench freezes the process or kills it. The K0 steps are in [android-keepalive.md](./android-keepalive.md). v1 does not promise a background service. A working floating window does not mean keep-alive is solved.
 5. Whether passwords encrypted with the machine id in `gui_config.json` still decrypt after a proot restart. The launcher re-applies `ABV_API_KEY` and `ABV_WEB_PASSWORD` on every start, so login does not depend on that ciphertext.

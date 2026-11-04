@@ -4,6 +4,8 @@
 
 本文件是当时的路线说明。它不包含 Bionic 原生包，也不包含保活 APK。不要把本 fork 推到 `lbjlaq/Antigravity-Manager`。
 
+保活的后继结论在 [android-keepalive.md](./android-keepalive.md)，本轮只写选择、不写实现。那份文档取代下面「先用唤醒锁扛息屏」和「M4 是带 WebView 的 APK」：Termux 会话本身已经是前台服务；Teee 的现场是小窗能活、工作台和息屏会停，唤醒锁对不上这个现象。下一刀代码叫 `m4a-loopback-probe`，而且要等那份文档里的 K0 失败才写。
+
 ## 0. v1 唯一主路线
 
 **v1 就做一件事：在 Termux 的 `proot-distro` Debian 里跑现有的 Linux aarch64 `--headless` 二进制，用平板自带浏览器打开已经存在的 Web 管理界面。**
@@ -16,14 +18,14 @@
 2. 同一条路径已经是 Docker 的正式形态。`docker/Dockerfile` 的 `ENTRYPOINT` 就是 `["/app/antigravity-tools", "--headless"]`，并用 `ABV_DIST_PATH=/app/dist` 把 `npm run build` 的静态页交给 Axum 托管。`docker/README.md` 写明浏览器访问 `http://localhost:8045`。
 3. 前端在没有 Tauri 时已经走 HTTP。`src/utils/env.ts` 用 `window.__TAURI_INTERNALS__` / `__TAURI__` 判断环境。`src/utils/request.ts` 在非 Tauri 时把命令映射到 `/api/...`，登录态放在 `sessionStorage` 的 `abv_admin_api_key`（`src/components/common/AdminAuthGuard.tsx`）。
 4. 上游发布矩阵里已经有 Linux arm64 桌面机构建：`.github/workflows/release.yml` 的 `ubuntu-24.04-arm`。产物是 glibc 动态链接，不是 Android Bionic。Issue [lbjlaq/Antigravity-Manager#3818](https://github.com/lbjlaq/Antigravity-Manager/issues/3818) 仍为 OPEN，正文写明 Linux ARM64 不能直接在 Termux 里跑，且没有 headless 专用包。proot Debian 正好补上这个 glibc 缺口，让 v1 不必先做 Bionic 移植。
-5. 平板上真正要长期活着的是本机反代（默认端口 8045，`src-tauri/src/proxy/config.rs` 的 `ProxyConfig::default`），不是一个前台窗口。浏览器只是管理面。进程保活先用 Termux 唤醒锁，不把产品绑进 Activity 生命周期。
+5. 平板上真正要长期活着的是本机反代（默认端口 8045，`src-tauri/src/proxy/config.rs` 的 `ProxyConfig::default`），不是一个前台窗口。浏览器只是管理面。当时打算先用 Termux 唤醒锁，不把产品绑进 Activity 生命周期。这台 vivo 的现场说明唤醒锁不够，后继选择见 [android-keepalive.md](./android-keepalive.md)。
 
 v1 成功时，使用者在平板 Chrome（或系统浏览器）打开 `http://127.0.0.1:8045`，用 Web 密码登录，粘贴一条 refresh token，让本机客户端把 OpenAI / Anthropic / Gemini 请求打到 `http://127.0.0.1:8045/v1`。桌面壳功能不在 v1。
 
 后续才做的两件事，明确不是 v1：
 
 - **M2–M3**：`server-only` 构建，去掉 GTK / WebKit / Tauri 链接，使二进制能在 Termux Bionic 上直接跑。这是 #3818 真正要的「原生 Termux」。
-- **M4（可选）**：很薄的 Kotlin 前台服务 APK，WebView 只加载 `127.0.0.1`。只有 vivo 杀后台让 proot / Termux 保活失败时才做。
+- **M4（未做）**：保活。选择写在 [android-keepalive.md](./android-keepalive.md)。不要按本节旧稿先做带 WebView 的 APK。
 
 ## 1. 架构：桌面壳、可移植后端、已经能用的 Web UI
 
@@ -196,7 +198,7 @@ OAuth：桌面走 `modules/oauth_server.rs`，在 `127.0.0.1` 和 `[::1]` 上起
 | 优点 | 代价 |
 | --- | --- |
 | 不改协议代码。Docker 已经证明这条启动路径 | 二进制仍链接 GTK / WebKit。即使用 `--headless` 也要装那一套库，磁盘和内存都比「纯 API」大。#3818 抱怨的就是这个开销 |
-| 数据目录、Web 登录、四套协议端点都在 | proot 不是 Android Service。vivo 省电策略可能把 Termux 杀掉。需要 `termux-wake-lock`，并在系统里把 Termux 设为无限制。能否扛住息屏，必须在 PA2553 上试 |
+| 数据目录、Web 登录、四套协议端点都在 | proot 不是 Android Service。vivo 省电策略可能把 Termux 冻住或杀掉。唤醒锁和「允许后台高耗电」要试，但是否够用以 [android-keepalive.md](./android-keepalive.md) 的 K0 为准 |
 | 构建可复用 `.github/workflows/release.yml` 的 `ubuntu-24.04-arm` 依赖清单，在 arm64 Linux 上 `npm run build` 再 `cargo build --release --bin antigravity-tools` | 不要直接 `workflow_dispatch` 现有 `release.yml` 来「只编一个测试包」：该 workflow 在 tag / 手动触发时会走发布门禁并上传 Release。测试包用单独的一次性构建，或以后加一个不发布的 workflow |
 | 浏览器 UI 就是现在的 React | AppImage 依赖 FUSE。proot 里 FUSE 经常不可用。用 `.deb` 解压出来的二进制，或 `cargo build` 的 ELF，不用 AppImage 挂载 |
 
@@ -226,7 +228,7 @@ Tauri 2 的 Android 壳和 Capacitor 都不如这个薄壳：
 - 反代必须在界面退到后台后继续听 8045。Tauri / Capacitor 的 Activity 会被系统冻结。前台服务要写在 Android 组件里，不是 WebView 插件能顺便得到的。
 - Capacitor 不编译这个 Cargo 工程，最后还是要另挂一个进程，多一层壳，少一层能力。
 
-因此：不把「Tauri mobile」或「Capacitor」列为 v1，也不列为 v2 的默认壳。只有路线 B 完成且 Termux 保活在 vivo 上不够用，才做这个 Kotlin 壳。
+因此：不把「Tauri mobile」或「Capacitor」列为 v1，也不列为 v2 的默认壳。只有路线 B 完成且 Termux 保活在 vivo 上不够用，才做这个 Kotlin 壳。保活形状以 [android-keepalive.md](./android-keepalive.md) 为准：先做不携带本二进制的回环探针；探针能活才做无 WebView 的 `specialUse` 宿主；不要用 `dataSync`（Android 15 有 6 小时上限）。
 
 ### 路线 D — Kotlin UI + UniFFI / JNI 共享 Rust 核心
 
@@ -254,7 +256,7 @@ Tauri 2 的 Android 壳和 Capacitor 都不如这个薄壳：
 | 安装说明 | 无 | 下一阶段补 `docs/` 或 `scripts/` 里的 Termux 步骤。本文件第 5 节是草稿，还没在 PA2553 上跑过 |
 | 会话与鉴权 | Web 密码在 `sessionStorage`（`AdminAuthGuard.tsx`）。关标签就丢，要重输。API Key 与 Web 密码分离已由 headless 环境变量支持 | 保持。不把管理密码放进平板剪贴板历史以外的新存储。文档里要求 `ABV_WEB_PASSWORD` 与 `ABV_API_KEY` 分开 |
 | 网络 | headless 默认局域网 | 启动命令固定 `ABV_BIND_LOCAL_ONLY=1`。需要给同一 Wi-Fi 上的电脑用时，再手动打开，并在设置里看 `auth_mode`。v1 文档默认只绑本机 |
-| 后台 | headless 只等 `tokio::signal::ctrl_c()`（`lib.rs`）。Linux GUI 分支才有 SIGTERM 处理 | proot 里用 `nohup` 或 Termux 的 runit（`termux-services`）。息屏用 Termux:API 的 `termux-wake-lock`。SIGTERM 是否干净退出是开放问题；v1 接受「杀进程再拉起」，数据以 SQLite / JSON 落盘为准 |
+| 后台 | headless 只等 `tokio::signal::ctrl_c()`（`lib.rs`）。Linux GUI 分支才有 SIGTERM 处理 | v1 接受「杀进程再拉起」，数据以 SQLite / JSON 落盘为准。`termux-wake-lock` 属于 Termux 自带的 `termux-tools`，不是 Termux:API，而且对不上这台 vivo 的现场。保活选择见 [android-keepalive.md](./android-keepalive.md) |
 | OAuth | Web 默认粘贴 token。回环 callback 见 `get_oauth_redirect_uri` | v1 只用 `add_account` 粘贴 refresh token。不新开 Google Cloud 客户端 |
 | 路径 | `ABV_DATA_DIR` 已支持 | 设在 proot 家目录，例如 `/root/.antigravity_tools`，不要指到 Android 共享存储。Termux 与 proot 的文件系统是两套，浏览器下载的 JSON 要用 `termux-setup-storage` 再拷进 proot，或直接在网页里粘贴 |
 | 自动更新 | 检查的是上游桌面 Release | v1 启动后在 Web 设置里关掉自动检查（`save_update_settings` 已在 `COMMAND_MAPPING`）。代码层默认关闭留到路线 B，避免 A 的「先跑起来」被设置项挡住。关于页不要出现「下载最新版」却链到 dmg/exe |
@@ -273,7 +275,7 @@ Tauri 2 的 Android 壳和 Capacitor 都不如这个薄壳：
 | 动态库 | 目标是只依赖 libc、可能的 `libdl`。SQLite 继续用 `rusqlite` 的 `bundled`。BoringSSL 随 `rquest` 静态链进来。这是 B 的最大技术风险 |
 | 鉴权存储 | 继续环境变量 + `gui_config.json`。先在 Termux 上打印 `machine_uid::get()` 的结果（不要打印密钥），确认重启后不变。若变化，server-only 改为使用文件内随机密钥并写进数据目录，而不是机器 ID。这是行为变化，要单独提交，并给旧的 `ag_enc_` / `ag_enc_v2_` 留解密失败时的明确错误，而不是静默把密文当密码 |
 | 网络 | 默认 `ABV_BIND_LOCAL_ONLY` 的语义收成「Android / Termux 默认只绑 127.0.0.1」，不要继承 Docker「headless 即局域网」 |
-| 后台 | `termux-wake-lock` + 可选 `termux-boot` 拉起脚本。文档写明 vivo 电池白名单。不承诺息屏 24 小时 |
+| 后台 | 去掉 proot 并不改变 OriginOS 的冻结面。保活仍按 [android-keepalive.md](./android-keepalive.md)，不承诺息屏 24 小时 |
 | OAuth | 仍优先粘贴 token。若要做回环：用系统浏览器打开 `http://localhost:8045/auth/callback` 这条已有路由，并在 PA2553 的 Chrome 上验证。失败则维持粘贴，不引入自定义 scheme（那会变成路线 C 的事情） |
 | 路径 | Termux 的 `HOME` 一般是 `/data/data/com.termux/files/home`，`dirs::home_dir()` 在设了 `HOME` 时可用。脚本显式导出 `ABV_DATA_DIR=$HOME/.antigravity_tools` |
 | 自动更新 | `update_checker.rs` 的三个上游 URL、`tauri.conf.json` 的 updater endpoint **不要**在 Bionic 包里启用。本 fork 若以后发 Termux 包，用自己的 Release 资产名（例如带 `android-arm64` 或 `termux` 的 tarball），并在关于页链到 `Teee3047/Antigravity-Manager`。未实现前，更新按钮禁用 |
@@ -282,7 +284,9 @@ Tauri 2 的 Android 壳和 Capacitor 都不如这个薄壳：
 
 ### 4.3 路线 C 相对 B 还要多做的（非 v1）
 
-- `minSdk` 至少覆盖 PA2553 的系统版本（版本号未知，实施前在机器上读一次）
+保活的开工顺序和前台服务类型以 [android-keepalive.md](./android-keepalive.md) 为准。下面这些是宿主 APK 真的要做时的约束，WebView 不在第一刀里。
+
+- `minSdk` 至少覆盖 PA2553 的系统版本（公开规格表写 Android 15，实施前在机器上读一次）
 - 前台服务 + 通知渠道；WebView 只允许 `http://127.0.0.1:8045`，禁止任意导航
 - 明文流量：仅放行 loopback，不设全局 `usesCleartextTraffic`
 - 二进制从 `nativeLibraryDir` 执行；数据目录用 `Context.getFilesDir()`，传给 `ABV_DATA_DIR`
@@ -320,7 +324,7 @@ export RUST_LOG=info
 ./antigravity-tools --headless
 ```
 
-6. Termux **外面**（Android 侧）安装 Termux:API 后执行 `termux-wake-lock`。在 vivo 电池设置里把 Termux 设为无限制。这一步的菜单位置以系统为准，本仓库没有 vivo 的截图。
+6. 保活不作为 M1 的成功条件。可选的现场记录是 [android-keepalive.md](./android-keepalive.md) 的 K0：在 Termux（不是 Debian）里执行 `termux-wake-lock`，并把 Termux 设为「允许后台高耗电」。不必为这把锁安装 Termux:API。小浮窗是目前这台平板上已经能用的权宜。
 7. 平板浏览器打开 `http://127.0.0.1:8045/`。用 `ABV_WEB_PASSWORD` 登录（未设置时 headless 会退回 API Key，见 `docker/README.md`）。在账号页粘贴一条已有 refresh token，而不是走 OAuth。
 8. 在 Termux 或 proot 里对 `http://127.0.0.1:8045/v1/models` 发一次带 `Authorization: Bearer <ABV_API_KEY>` 的请求。再从使用者真正要用的客户端发一次最短对话。上游失败时看 `ABV_DATA_DIR/logs/`，不要先改 mapper。
 
@@ -350,9 +354,9 @@ export RUST_LOG=info
 
 成功标准：`pkg` 环境里不安装 GTK / WebKit，`ldd` 或 `readelf` 看不到 `libgtk` / `libwebkit`；`./antigravity-tools --headless`（或 server-only 的默认启动）重复 M1 的功能标准；安装步骤写成脚本并在 PA2553 上跑通一次。
 
-### M4 — 仅当 M1/M3 保活不够
+### M4 — 保活（见 android-keepalive.md，本计划不实现）
 
-Kotlin 前台服务，见 4.3。成功标准：屏幕关闭、WebView 划掉之后，通知还在，`/health` 仍通，至少 30 分钟（时长在 vivo 上实测后再写死）。这不是 v1。
+旧稿是「Kotlin 前台服务 + WebView，息屏 30 分钟 `/health` 仍通」。这个成功标准还在，形状改了：下一刀是 `m4a-loopback-probe`（服务进程自己听 `127.0.0.1`，不跑本二进制，不带 WebView）。现有进程的对照步骤是那份文档的 K0。这不是 v1。
 
 ## 6. v1 明确不做
 
@@ -372,7 +376,7 @@ Kotlin 前台服务，见 4.3。成功标准：屏幕关闭、WebView 划掉之�
 
 | 风险 | 为什么严重 | 怎么收 |
 | --- | --- | --- |
-| proot + WebKit 太重或被 vivo 杀掉 | v1 的进程模型就是这个 | M1 用唤醒锁和电池白名单实测。失败再做 M3/M4，不在 M1 里换架构 |
+| proot + WebKit 太重或被 vivo 杀掉 | v1 的进程模型就是这个 | 先做 K0，分清冻住还是被杀。失败再考虑保活文档里的探针，不在 M1 里换架构。去掉 proot 本身不改变这个杀伤面 |
 | `rquest` / BoringSSL 在 Bionic 上编不过 | 上游指纹依赖它，不能换成普通 reqwest | M3 单独排期。M1 用 glibc 构建绕开这个问题 |
 | Chrome 访问不到 Termux 的 `127.0.0.1` | 管理 UI 和本机客户端都靠回环 | M1 第 8 步先在 proot 内 curl，再在 Chrome 里开。若只有 Chrome 失败，再查 vivo 是否隔离回环；那会直接抬高路线 C 的优先级 |
 | `machine-uid` 在 proot 里为空或每次变化 | `crypto.rs` 会解不开已保存的密码 | v1 用环境变量注入。M3 再决定是否换密钥来源 |
@@ -387,7 +391,7 @@ Kotlin 前台服务，见 4.3。成功标准：屏幕关闭、WebView 划掉之�
 1. PA2553 的 Android 版本、WebView 主版本、是否已安装 Termux、存储空间还剩多少。决定 M1 能不能在机上编译（不建议）以及 M4 的 `minSdk`。
 2. 在这台 vivo 上，Chrome 是否能访问 Termux / proot 监听的 `127.0.0.1:8045`。Android 一般共享回环，但是否被厂商改过，仓库无法证明。
 3. proot Debian 里 `machine_uid::get()` 的值跨重启是否稳定。
-4. `termux-wake-lock` 加电池白名单之后，息屏多久进程还在。没有这个数据就不能判断要不要做 M4。
+4. K0：白名单和 `termux-wake-lock` 之后，息屏与工作台下进程是冻住还是被杀掉。步骤在 [android-keepalive.md](./android-keepalive.md)。没有这张表就不写探针。
 5. arm64 `.deb` 解压后的 `ldd` 在 proot 里缺哪些库。`docker/Dockerfile` 的列表是 glibc 容器，不一定等于 Debian proot 的包名。
 6. `tauri_build::build()` 在「只 `cargo build --bin`、但 `dist/` 已生成」时是否还要求其它 Tauri 资源。Dockerfile 是这么构建的，所以预期可以；若失败，以构建日志为准，不要改去 `tauri build` 出 AppImage。
 7. server-only 的 CLI 形态：还要不要保留 `--headless` 这个词，以及 `cli_handler.rs` 的 `switch` 在没有桌面宿主时是隐藏还是保留并返回现有的 headless 错误。
