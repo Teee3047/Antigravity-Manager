@@ -1,8 +1,8 @@
 # Android 平板适配计划（vivo PA2553 / Dimensity 9300+）
 
-状态：计划，尚未改代码。目标机是 Teee 的 vivo PA2553（联发科 Dimensity 9300+）。该 SoC 为 arm64。仓库里没有这台机器的 Android 版本、是否已装 Termux、是否有 root 的记录，见文末开放问题。
+状态：v1 安装路径已经落到仓库里。操作步骤见 [android-termux.md](./android-termux.md)。目标机仍是 Teee 的 vivo PA2553（联发科 Dimensity 9300+，arm64）。本仓库没有在这台机器上跑过，文末开放问题和安装文档里的「需要真机确认」仍然有效。
 
-本文件只规划。不在本变更里移植、打包或向 `lbjlaq/Antigravity-Manager` 推送。
+本文件是当时的路线说明。它不包含 Bionic 原生包，也不包含保活 APK。不要把本 fork 推到 `lbjlaq/Antigravity-Manager`。
 
 ## 0. v1 唯一主路线
 

@@ -1,0 +1,15 @@
+Antigravity Tools — unofficial headless bundle
+上游项目 Upstream: https://github.com/lbjlaq/Antigravity-Manager
+本 fork This fork: https://github.com/Teee3047/Antigravity-Manager
+License / 许可证: Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+https://creativecommons.org/licenses/by-nc-sa/4.0/
+Full text: LICENSE in this directory.
+
+This is not an official Android app and it is not published by the upstream project.
+Personal non-commercial use only. Do not sell this build.
+Desktop auto-update is disabled. Do not install upstream Windows, macOS, or Linux
+desktop packages as an update for this tablet bundle.
+
+这不是官方 Android 应用，也不是上游发布的桌面安装包。
+仅供个人非商业使用。请保留本说明和 LICENSE。
+桌面自动更新已关闭。不要把上游的 Windows / macOS / Linux 桌面安装包当作本平板包的更新。
