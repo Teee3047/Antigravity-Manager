@@ -59,8 +59,14 @@ cp LICENSE "$STAGE/$NAME/LICENSE"
 cp scripts/termux/ATTRIBUTION.txt "$STAGE/$NAME/ATTRIBUTION.txt"
 cp scripts/termux/run-headless.sh "$STAGE/$NAME/run-headless.sh"
 cp scripts/termux/termux-setup.sh "$STAGE/$NAME/termux-setup.sh"
+cp scripts/termux/start-from-termux.sh "$STAGE/$NAME/start-from-termux.sh"
+cp scripts/termux/install-termux-widget.sh "$STAGE/$NAME/install-termux-widget.sh"
 cp docs/android-termux.md "$STAGE/$NAME/ANDROID.txt"
-chmod 755 "$STAGE/$NAME/run-headless.sh" "$STAGE/$NAME/termux-setup.sh"
+chmod 755 \
+  "$STAGE/$NAME/run-headless.sh" \
+  "$STAGE/$NAME/termux-setup.sh" \
+  "$STAGE/$NAME/start-from-termux.sh" \
+  "$STAGE/$NAME/install-termux-widget.sh"
 printf '%s\n' "$ARCH" > "$STAGE/$NAME/BUNDLE_ARCH"
 
 OUT="$OUT_DIR/antigravity-headless-linux-${ARCH}.tar.gz"

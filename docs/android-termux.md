@@ -36,9 +36,9 @@ pkg install -y proot-distro tar
 
 ## 1. 拿到 linux/aarch64 安装包 / Get the linux/aarch64 bundle
 
-安装包里有 `antigravity-tools`、`dist/`（网页）、`run-headless.sh`、`termux-setup.sh`、`LICENSE`、`ATTRIBUTION.txt`。架构文件 `BUNDLE_ARCH` 必须是 `aarch64`。
+安装包里有 `antigravity-tools`、`dist/`（网页）、`run-headless.sh`、`termux-setup.sh`、`start-from-termux.sh`、`install-termux-widget.sh`、`LICENSE`、`ATTRIBUTION.txt`。架构文件 `BUNDLE_ARCH` 必须是 `aarch64`。
 
-The archive contains `antigravity-tools`, `dist/` (the web UI), `run-headless.sh`, `termux-setup.sh`, `LICENSE`, and `ATTRIBUTION.txt`. `BUNDLE_ARCH` must say `aarch64`.
+The archive contains `antigravity-tools`, `dist/` (the web UI), `run-headless.sh`, `termux-setup.sh`, `start-from-termux.sh`, `install-termux-widget.sh`, `LICENSE`, and `ATTRIBUTION.txt`. `BUNDLE_ARCH` must say `aarch64`.
 
 ### 1A. 从本 fork 的 Actions 下载 / Download the Actions artifact
 
@@ -108,9 +108,9 @@ cat BUNDLE_ARCH
 
 `BUNDLE_ARCH` must print `aarch64`. Read `ATTRIBUTION.txt`.
 
-如果压缩包不在 Download，把 `tar -xzf` 的路径换成实际位置。解压后当前目录里要有 `antigravity-tools`、`dist/index.html`、`termux-setup.sh`、`run-headless.sh`。
+如果压缩包不在 Download，把 `tar -xzf` 的路径换成实际位置。解压后当前目录里要有 `antigravity-tools`、`dist/index.html`、`termux-setup.sh`、`run-headless.sh`、`start-from-termux.sh`、`install-termux-widget.sh`。
 
-If the archive is not in Download, change the `tar` path. After unpacking you need `antigravity-tools`, `dist/index.html`, `termux-setup.sh`, and `run-headless.sh` in the current directory.
+If the archive is not in Download, change the `tar` path. After unpacking you need `antigravity-tools`, `dist/index.html`, `termux-setup.sh`, `run-headless.sh`, `start-from-termux.sh`, and `install-termux-widget.sh` in the current directory.
 
 ## 3. 安装 Debian 和动态库 / Install Debian and libraries
 
@@ -186,7 +186,7 @@ If the tablet still has the old script, stay in the unpacked directory and run t
 
 ## 4. 启动 / Start
 
-在 Termux 里：
+日常优先用下面的「一键启动」。需要手工排错时，在 Termux 里：
 
 ```bash
 proot-distro login debian -- /opt/antigravity-headless/run-headless.sh
@@ -232,6 +232,62 @@ Teee 在这台 vivo 上的现场：小浮窗开着时反代还在；工作台 / 
 Stop with Ctrl-C. This bundle does not install its own Android foreground service. While a Termux session exists, Termux already shows a foreground-service notification. `termux-wake-lock` comes with Termux (`termux-tools`), not Termux:API. It only adds a partial wake lock on that service. Run it in Termux, not in Debian. The notification must say the lock is held.
 
 On this vivo, a small floating window keeps the proxy up. Workbench / multi-window and a dark screen stop it. v1 does not treat the wake lock as the fix. The floating window is the setup that has worked here. Options and the device checklist are in [android-keepalive.md](./android-keepalive.md). OriginOS also has its own "allow high background power" switch, separate from Android's unrestricted-battery setting. Menu names follow the tablet.
+
+## 4a. 一键启动 / One-tap start
+
+装好 Debian 和 `/opt/antigravity-headless` 之后，不必每次再敲 `proot-distro login` 和路径。用 Termux 侧脚本一键启动（**不是**官方 Android 应用，也**不**装自定义 APK）。
+
+After Debian and `/opt/antigravity-headless` are in place, you do not need to retype `proot-distro login` and the path. Use the Termux-side starter (this is **not** an official Android app and does **not** install a custom APK).
+
+**中文**
+
+1. （一次）从 [F-Droid 的 Termux:Widget](https://f-droid.org/packages/com.termux.widget/) 安装小组件。不要用来路不明的 APK。
+2. （一次）在 Termux 里，进入解压后的安装包目录（例如 `~/antigravity-headless`），执行：
+
+```bash
+bash install-termux-widget.sh
+```
+
+   它会把 `start-from-termux.sh` 复制到 `~/.shortcuts/启动 Antigravity`。
+3. 长按桌面 → 小组件 → 选 Termux:Widget → 点「启动 Antigravity」。
+4. 脚本会：可选地请求 `termux-wake-lock`（没有也不失败）→ 进入 proot Debian 跑 `run-headless.sh` → 健康检查通过后打开 `http://127.0.0.1:8045/`。若 `/health` 已通，再点一次只打印地址并打开浏览器，**不会**起第二个实例。
+
+不想用小组件时，在 Termux 里执行：
+
+```bash
+bash ~/antigravity-headless/start-from-termux.sh
+# 或（安装包已进 Debian 后，仍用 Termux 侧这份脚本）
+bash start-from-termux.sh --no-browser   # 只起服务，不打开浏览器
+```
+
+安装路径默认找 Debian 里的 `/opt/antigravity-headless`；也可用环境变量覆盖：
+
+```bash
+AGV_INSTALL_DIR=/opt/antigravity-headless bash start-from-termux.sh
+# AGV_BUNDLE_DIR 与 AGV_INSTALL_DIR 同义
+```
+
+**English**
+
+1. (Once) Install [Termux:Widget from F-Droid](https://f-droid.org/packages/com.termux.widget/). Do not sideload a random APK.
+2. (Once) In Termux, from the unpacked bundle directory (e.g. `~/antigravity-headless`):
+
+```bash
+bash install-termux-widget.sh
+```
+
+   That copies `start-from-termux.sh` to `~/.shortcuts/启动 Antigravity`.
+3. Long-press the home screen → Widgets → Termux:Widget → tap 「启动 Antigravity」.
+4. The script optionally requests `termux-wake-lock` (missing is fine), runs `run-headless.sh` inside proot Debian, and opens `http://127.0.0.1:8045/` when `/health` is up. A second tap while already healthy only prints the URLs and opens the browser — it does **not** start another instance.
+
+Without the widget:
+
+```bash
+bash ~/antigravity-headless/start-from-termux.sh
+bash start-from-termux.sh --no-browser
+```
+
+Override the guest install dir with `AGV_INSTALL_DIR` or `AGV_BUNDLE_DIR` (default discovery starts at `/opt/antigravity-headless`).
 
 ## 5. 打开网页 / Open the UI
 
