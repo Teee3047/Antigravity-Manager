@@ -143,6 +143,12 @@ pub fn get_upstream_proxy_url() -> Option<String> {
 /// 1. Check updater.json based on selected channel (Stable vs Beta)
 /// 2. Fallback to GitHub API (Release or Pre-release)
 pub async fn check_for_updates() -> Result<UpdateInfo, String> {
+    if desktop_updates_disabled() {
+        return Err(
+            "desktop auto-update is disabled (ABV_DISABLE_UPDATES). This unofficial headless build does not download upstream desktop packages."
+                .to_string(),
+        );
+    }
     let settings = load_update_settings().unwrap_or_default();
     let mut info = check_for_updates_internal(settings.update_channel).await?;
     info.proxy_url = get_upstream_proxy_url();
@@ -548,9 +554,27 @@ pub fn compare_versions(latest: &str, current: &str) -> bool {
     }
 }
 
+/// `ABV_DISABLE_UPDATES=1` stops this process from querying upstream desktop releases.
+/// The tablet/headless launcher sets it so a browser session cannot offer
+/// Windows/macOS/Linux installers as an "update".
+pub fn env_disables_desktop_updates(value: Option<&str>) -> bool {
+    matches!(
+        value.unwrap_or("").trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
+pub fn desktop_updates_disabled() -> bool {
+    env_disables_desktop_updates(std::env::var("ABV_DISABLE_UPDATES").ok().as_deref())
+}
+
 /// Check if enough time has passed since last check
 pub fn should_check_for_updates(settings: &UpdateSettings) -> bool {
-    if !settings.auto_check {
+    should_check_allowing_lock(settings, desktop_updates_disabled())
+}
+
+fn should_check_allowing_lock(settings: &UpdateSettings, updates_locked: bool) -> bool {
+    if updates_locked || !settings.auto_check {
         return false;
     }
 
@@ -742,5 +766,24 @@ mod tests {
 
         settings.auto_check = false;
         assert!(!should_check_for_updates(&settings));
+    }
+
+    #[test]
+    fn test_env_disables_desktop_updates() {
+        assert!(env_disables_desktop_updates(Some("1")));
+        assert!(env_disables_desktop_updates(Some(" TRUE ")));
+        assert!(env_disables_desktop_updates(Some("yes")));
+        assert!(env_disables_desktop_updates(Some("on")));
+        assert!(!env_disables_desktop_updates(Some("0")));
+        assert!(!env_disables_desktop_updates(Some("")));
+        assert!(!env_disables_desktop_updates(None));
+    }
+
+    #[test]
+    fn test_locked_update_check_stays_off() {
+        let settings = UpdateSettings::default();
+        assert!(settings.auto_check);
+        assert!(!should_check_allowing_lock(&settings, true));
+        assert!(should_check_allowing_lock(&settings, false));
     }
 }

@@ -449,6 +449,20 @@ pub fn run() {
                     }
                     info!("💡 Tips: You can use these keys to login to Web UI and access AI APIs.");
                     info!("💡 Search docker logs or grep gui_config.json to find them.");
+                    info!(
+                        "Web UI (this machine): http://127.0.0.1:{}/",
+                        config.proxy.port
+                    );
+                    if config.proxy.allow_lan_access {
+                        info!("Listening on all interfaces. Set ABV_BIND_LOCAL_ONLY=1 to keep the proxy on 127.0.0.1.");
+                    } else {
+                        info!("Listening on 127.0.0.1 only (ABV_BIND_LOCAL_ONLY).");
+                    }
+                    if crate::modules::update_checker::desktop_updates_disabled() {
+                        info!(
+                            "Desktop auto-update is disabled (ABV_DISABLE_UPDATES). This process will not download upstream desktop installers."
+                        );
+                    }
                     info!("--------------------------------------------------");
 
                     // [FIX #1460] Persist environment overrides to ensure they are visible in Web UI/load_config
