@@ -122,8 +122,8 @@ bash termux-setup.sh
 
 脚本会：
 
-- 安装 `proot-distro` 并安装 Debian（已安装则跳过）
-- 把当前目录复制到 Debian 里的 `/opt/antigravity-headless`
+- 安装 `proot-distro`。是否已有 Debian 看 `proot-distro list` 和 `proot-distro login debian`，不看旧目录在不在
+- 把当前目录用 `tar` 送进 `proot-distro login debian`，落到 `/opt/antigravity-headless`
 - 在 Debian 里安装运行库：`ca-certificates`、`libssl3`（或 `libssl3t64`）、`libsqlite3-0`、`libgtk-3-0`（或 `libgtk-3-0t64`）、`libwebkit2gtk-4.1-0`、`libayatana-appindicator3-1`、`librsvg2-2`、`curl`
 
 这些库和 `docker/Dockerfile` 最终阶段是同一类。headless 用的是带 GTK/WebKit 链接的同一个二进制，所以即使用 `--headless` 也要装它们。
@@ -140,13 +140,49 @@ From **Termux**, in the unpacked directory:
 bash termux-setup.sh
 ```
 
-The script installs Debian under proot, copies the bundle to `/opt/antigravity-headless`, and installs the runtime libraries. The headless binary is the same GTK/WebKit-linked binary as the desktop build, so those libraries are required even with `--headless`.
+The script installs proot-distro, treats Debian as present when `proot-distro list` or `proot-distro login debian` says so, and streams this directory into the guest with `tar`. It does not decide that from the old `installed-rootfs` directory. The headless binary is the same GTK/WebKit-linked binary as the desktop build, so those libraries are required even with `--headless`.
 
 It then runs `ldd`. If any line says `not found`, it exits and prints them. Install those packages and re-run the `--inside` command above. Do not open the browser yet.
 
 proot-distro 当前拉到的 Debian 版本可能让包名带 `t64` 后缀。脚本会按候选名逐个试。如果候选全部失败，以 `apt-cache search webkit2gtk` 的结果为准，这是真机上才会知道的事。
 
 The Debian release inside proot may use `t64` package names. The script tries the candidates it knows. If every candidate fails, use `apt-cache search webkit2gtk` on the device.
+
+### Debian 已经装好，但旧目录不存在 / Debian is listed, old rootfs path is missing
+
+当前 Termux 里的 proot-distro 把系统放在：
+
+```text
+$PREFIX/var/lib/proot-distro/containers/debian/rootfs
+```
+
+下面这个旧路径可以不存在，`ls` 报 `No such file or directory` 是正常的：
+
+```text
+$PREFIX/var/lib/proot-distro/installed-rootfs/debian
+```
+
+这时 `proot-distro list` 仍然显示 `debian`，`proot-distro login debian -- pwd` 仍然打印 `/root`。不要再执行 `proot-distro install debian`。再装一次会失败，错误是 `container 'debian' already exists`。也不要 `proot-distro remove debian`，那会把已经装好的系统删掉。
+
+用这份更新过的 `termux-setup.sh` 时，直接在解压目录里重新执行 `bash termux-setup.sh` 即可。脚本看到 list 或 login 成功就跳过 install，再用 tar 把文件送进 guest。
+
+如果平板上还是旧脚本，先不要重装 Debian。在解压后的目录里手工做下面这几步（和脚本同一条路）：
+
+```bash
+proot-distro login debian -- pwd
+proot-distro login debian -- rm -rf /opt/antigravity-headless
+proot-distro login debian -- mkdir -p /opt/antigravity-headless
+tar -C "$PWD" -cf - . | proot-distro login debian -- tar -C /opt/antigravity-headless -xf -
+proot-distro login debian -- /bin/bash /opt/antigravity-headless/termux-setup.sh --inside
+```
+
+`pwd` 应打印 `/root`。`/opt` 在复制前是空的，这没关系。复制之后再跑 `--inside`。
+
+Current proot-distro stores the guest at `$PREFIX/var/lib/proot-distro/containers/debian/rootfs`. The legacy directory `$PREFIX/var/lib/proot-distro/installed-rootfs/debian` may be missing. `proot-distro list` can still show `debian`, and `proot-distro login debian -- pwd` still prints `/root`. Do not run `proot-distro install debian` again: the error is `container 'debian' already exists`. Do not run `proot-distro remove debian`; that deletes the guest.
+
+With this updated `termux-setup.sh`, run `bash termux-setup.sh` again from the unpacked directory. It skips install when list or login succeeds, then streams the bundle in with tar.
+
+If the tablet still has the old script, stay in the unpacked directory and run the commands above. `pwd` should print `/root`. An empty `/opt` before the copy is expected. Run `--inside` after the copy.
 
 ## 4. 启动 / Start
 
@@ -241,17 +277,17 @@ To upgrade, build a new archive, copy it over, stop the old process, and run `ba
 
 ## 需要真机确认 / Still needs the tablet
 
-这些步骤是按仓库里的 `--headless`、Docker 运行库和 proot 的常规路径写的。下面每一条都还没在 vivo PA2553 上做过：
+vivo 上已经见过一种失败：`proot-distro list` 有 `debian`，`login` 能进 `/root`，但 `$PREFIX/var/lib/proot-distro/installed-rootfs/debian` 不存在，旧脚本因此去 `install`，得到 `container 'debian' already exists`。上面的检测和 tar 复制就是对着这个失败改的。本机用假的 `proot-distro` 跑过 `bash scripts/termux/termux-setup.sh --self-test`。平板上还没重跑过更新后的脚本。下面这些仍然要在 vivo 上确认：
 
-1. `proot-distro install debian` 之后，`libwebkit2gtk-4.1-0` 这些包名是否都能装上。装不上时以脚本打印的 `ldd` 为准。
+1. 用更新后的脚本（或上面的手工 tar）把包送进已经存在的 Debian 之后，`libwebkit2gtk-4.1-0` 这些包名是否都能装上。装不上时以脚本打印的 `ldd` 为准。tar 若没把 `dist/index.html` 送进去，脚本会改到 `containers/debian/rootfs` 上复制；这条备用路径也还没在平板上走过。
 2. Debian 里 `curl http://127.0.0.1:8045/health` 成功之后，平板 Chrome 是否也能打开同一个地址。
 3. 登录、粘贴 refresh token、刷新配额、以及一次 `/v1/models` 或一次最短对话是否走完本机进程。上游返回 4xx 可以接受，前提是请求确实从平板发出，并且写进了数据目录里的日志或 `proxy_logs.db`。
 4. 息屏之后进程还能活多久。v1 不保证后台常驻。
 5. `tablet.env` 里的密码在重启 proot 之后是否还能解开 `gui_config.json` 里用机器 ID 加密的字段。启动脚本每次都会重新导出 `ABV_API_KEY` 和 `ABV_WEB_PASSWORD`，所以登录不依赖那份密文。
 
-These steps follow the existing `--headless` path, the Docker runtime libraries, and a normal proot layout. None of them have been run on the vivo PA2553:
+The vivo already hit one failure: `proot-distro list` shows `debian`, `login` reaches `/root`, and `$PREFIX/var/lib/proot-distro/installed-rootfs/debian` is missing, so the old script ran `install` and got `container 'debian' already exists`. The detection and tar copy above are the fix for that. `bash scripts/termux/termux-setup.sh --self-test` passed here against a fake `proot-distro`. The updated script has not been re-run on the tablet. These still need the vivo:
 
-1. Whether the WebKit/GTK package names install on the Debian release `proot-distro` fetches. Trust the `ldd` output if they do not.
+1. Whether the WebKit/GTK package names install after the updated script, or the manual tar commands, copies the bundle into the Debian that is already there. Trust the `ldd` output if they do not. If tar does not land `dist/index.html`, the script copies onto `containers/debian/rootfs` instead. That fallback has not been exercised on the tablet either.
 2. Whether Chrome on the tablet can open `127.0.0.1:8045` after `curl` inside Debian succeeds.
 3. Login, a pasted refresh token, a quota refresh, and one `/v1/models` or one short chat through the local process. An upstream 4xx is acceptable when the request left the tablet and was logged.
 4. How long the process survives with the screen off. v1 does not promise a background service.
