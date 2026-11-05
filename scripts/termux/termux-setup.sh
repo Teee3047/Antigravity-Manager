@@ -62,9 +62,12 @@ setup_inside() {
   fi
 
   log ""
-  log "Libraries are present. Start the server with:"
+  log "Libraries are present. From Termux (not here), one-tap start:"
+  log "  bash start-from-termux.sh"
+  log "  bash install-termux-widget.sh   # optional home-screen widget"
+  log "Or inside Debian:"
   log "  ${ROOT}/run-headless.sh"
-  log "Then on the tablet browser open http://127.0.0.1:8045/"
+  log "Then open http://127.0.0.1:8045/ (start-from-termux.sh opens it by default)."
   log "The first start writes the Web UI password to ~/.antigravity_tools/tablet.env"
 }
 
