@@ -241,15 +241,15 @@ After Debian and `/opt/antigravity-headless` are in place, you do not need to re
 
 **中文**
 
-1. （一次）从 [F-Droid 的 Termux:Widget](https://f-droid.org/packages/com.termux.widget/) 安装小组件。不要用来路不明的 APK。
+1. （一次）从 [F-Droid 的 Termux:Widget](https://f-droid.org/packages/com.termux.widget/) 安装小组件（签名需与 Termux 一致）。不要用来路不明的 APK。
 2. （一次）在 Termux 里，进入解压后的安装包目录（例如 `~/antigravity-headless`），执行：
 
 ```bash
 bash install-termux-widget.sh
 ```
 
-   它会把 `start-from-termux.sh` 复制到 `~/.shortcuts/启动 Antigravity`。
-3. 长按桌面 → 小组件 → 选 Termux:Widget → 点「启动 Antigravity」。
+   它会在 `~/.shortcuts/start-antigravity` 写入一个薄包装脚本（绝对路径的 Termux bash + `exec` 真正的 `start-from-termux.sh`）。文件名不含空格；不要用 `#!/usr/bin/env bash` 作为 Widget 入口。重跑安装器会替换旧快捷方式，并删除遗留的 `启动 Antigravity`。
+3. 若桌面已有旧小组件，先移除，再长按桌面 → 小组件 → 选 Termux:Widget → 选 **start-antigravity**。
 4. 脚本会：可选地请求 `termux-wake-lock`（没有也不失败）→ 进入 proot Debian 跑 `run-headless.sh` → 健康检查通过后打开 `http://127.0.0.1:8045/`。若 `/health` 已通，再点一次只打印地址并打开浏览器，**不会**起第二个实例。
 
 不想用小组件时，在 Termux 里执行：
@@ -269,15 +269,15 @@ AGV_INSTALL_DIR=/opt/antigravity-headless bash start-from-termux.sh
 
 **English**
 
-1. (Once) Install [Termux:Widget from F-Droid](https://f-droid.org/packages/com.termux.widget/). Do not sideload a random APK.
+1. (Once) Install [Termux:Widget from F-Droid](https://f-droid.org/packages/com.termux.widget/) (matching Termux signature). Do not sideload a random APK.
 2. (Once) In Termux, from the unpacked bundle directory (e.g. `~/antigravity-headless`):
 
 ```bash
 bash install-termux-widget.sh
 ```
 
-   That copies `start-from-termux.sh` to `~/.shortcuts/启动 Antigravity`.
-3. Long-press the home screen → Widgets → Termux:Widget → tap 「启动 Antigravity」.
+   That writes a thin wrapper at `~/.shortcuts/start-antigravity` (absolute Termux bash + `exec` of the real `start-from-termux.sh`). The filename has no spaces; do not use `#!/usr/bin/env bash` as the Widget entrypoint. Re-running the installer replaces the shortcut and removes any legacy `启动 Antigravity` file.
+3. Remove any old desktop widget first, then long-press the home screen → Widgets → Termux:Widget → pick **start-antigravity**.
 4. The script optionally requests `termux-wake-lock` (missing is fine), runs `run-headless.sh` inside proot Debian, and opens `http://127.0.0.1:8045/` when `/health` is up. A second tap while already healthy only prints the URLs and opens the browser — it does **not** start another instance.
 
 Without the widget:
