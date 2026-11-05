@@ -715,8 +715,8 @@ function Settings() {
                                 </div>
                             )}
 
-                            {/* 自动检查更新 */}
-                            <>
+                            {/* 自动检查更新：只在桌面壳里提供。浏览器会话不连上游桌面更新器。 */}
+                            {isTauri() && <>
                                 <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-base-200 rounded-lg border border-gray-100 dark:border-base-300">
                                     <div>
                                         <div className="font-medium text-gray-900 dark:text-base-content">{t('settings.general.auto_check_update')}</div>
@@ -777,7 +777,7 @@ function Settings() {
                                         <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">{t('settings.general.update_check_interval_desc')}</p>
                                     </div>
                                 )}
-                            </>
+                            </>}
 
                             {/* 轻量模式 (释放内存) */}
                             {isTauri() && (
@@ -1765,8 +1765,22 @@ function Settings() {
                                     </div>
                                 </div>
 
-                                {/* Update Channel Selector */}
-                                <div className="flex flex-col items-center gap-2">
+                                {!isTauri() && (
+                                    <div className="max-w-xl px-6 text-center text-sm leading-relaxed text-gray-600 dark:text-gray-300 space-y-2">
+                                        <p>{t('settings.about.unofficial_notice')}</p>
+                                        <p>{t('settings.about.unofficial_updates')}</p>
+                                        <p className="text-xs">
+                                            <a className="underline" href="https://github.com/lbjlaq/Antigravity-Manager" target="_blank" rel="noreferrer">lbjlaq/Antigravity-Manager</a>
+                                            {' · '}
+                                            <a className="underline" href="https://github.com/Teee3047/Antigravity-Manager" target="_blank" rel="noreferrer">Teee3047/Antigravity-Manager</a>
+                                            {' · '}
+                                            <a className="underline" href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noreferrer">CC BY-NC-SA 4.0</a>
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* Update Channel Selector — desktop shell only. The browser UI must not offer upstream desktop installers. */}
+                                {isTauri() && <div className="flex flex-col items-center gap-2">
                                     <div className="flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-gray-400">
                                         <span>{t('settings.about.update_channel')}:</span>
                                         <div className="inline-flex p-1 bg-gray-100 dark:bg-base-300 rounded-xl border border-gray-200/60 dark:border-base-200">
@@ -1832,10 +1846,10 @@ function Settings() {
                                             {t('settings.about.channel_beta_hint')}
                                         </p>
                                     )}
-                                </div>
+                                </div>}
 
-                                {/* Check for Updates */}
-                                <div className="flex flex-col items-center gap-3">
+                                {/* Check for Updates — desktop shell only */}
+                                {isTauri() && <div className="flex flex-col items-center gap-3">
                                     <button
                                         onClick={handleCheckUpdate}
                                         disabled={isCheckingUpdate}
@@ -1903,7 +1917,7 @@ function Settings() {
                                             )}
                                         </div>
                                     )}
-                                </div>
+                                </div>}
                             </div>
 
                             <div className="text-center text-[10px] text-gray-300 dark:text-gray-600 mt-auto pb-2">

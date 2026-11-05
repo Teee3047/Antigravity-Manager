@@ -238,6 +238,8 @@ function App() {
   // Check for updates on startup
   useEffect(() => {
     const checkUpdates = async () => {
+      // 浏览器 / headless 不走上游桌面更新器（dmg、exe、AppImage）。
+      if (!isTauri()) return;
       try {
         console.log('[App] Checking if we should check for updates...');
         const shouldCheck = await invoke<boolean>('should_check_updates');
@@ -261,10 +263,10 @@ function App() {
   }, []);
 
   const isMini =
-    (typeof window !== 'undefined' && window.location.search.includes('mini')) ||
-    (typeof window !== 'undefined' &&
-      (window as any).__TAURI_INTERNALS__?.metadata?.currentWindow?.label === 'mini') ||
-    (isTauri() &&
+    isTauri() &&
+    ((typeof window !== 'undefined' && window.location.search.includes('mini')) ||
+      (typeof window !== 'undefined' &&
+        (window as any).__TAURI_INTERNALS__?.metadata?.currentWindow?.label === 'mini') ||
       (() => {
         try {
           return getCurrentWindow().label === 'mini';

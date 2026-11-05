@@ -197,6 +197,8 @@ export const AdminAuthGuard: React.FC<{ children: React.ReactNode }> = ({ childr
                             {t('login.lookup_hint')}
                             <br />
                             {t('login.config_hint')}
+                            <br />
+                            {t('login.unofficial')}
                         </p>
                     </div>
                 </div>

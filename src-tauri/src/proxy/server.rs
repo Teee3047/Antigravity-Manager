@@ -1078,14 +1078,26 @@ impl AxumServer {
             .layer(DefaultBodyLimit::max(max_body_size)) // 放宽 body 大小限制
             .with_state(state.clone());
 
-        // 静态文件托管 (用于 Headless/Docker 模式)
+        // 静态文件托管 (用于 Headless/Docker/平板浏览器)。
+        // Vite `base: "./"`。文档地址是 `/accounts/` 或 `/settings/foo` 时，
+        // `./assets/*` 会落到该目录下面，文件实际在 `dist/assets/*`。
+        // 缺失的脚本不能回成 index.html。
         let dist_path = std::env::var("ABV_DIST_PATH").unwrap_or_else(|_| "dist".to_string());
-        let app = if std::path::Path::new(&dist_path).exists() {
+        let app = if std::path::Path::new(&dist_path)
+            .join("index.html")
+            .is_file()
+        {
             tracing::info!("正在托管静态资源: {}", dist_path);
-            app.fallback_service(tower_http::services::ServeDir::new(&dist_path).fallback(
-                tower_http::services::ServeFile::new(format!("{}/index.html", dist_path)),
-            ))
+            let dist = std::path::PathBuf::from(&dist_path);
+            app.fallback(move |req: axum::extract::Request| {
+                let dist = dist.clone();
+                async move { headless_static(dist, req).await }
+            })
         } else {
+            tracing::warn!(
+                "Web UI was not mounted: {} has no index.html. Set ABV_DIST_PATH to the Vite dist directory.",
+                dist_path
+            );
             app
         };
 
@@ -1326,6 +1338,41 @@ fn bind_tcp_listener(host: &str, port: u16) -> Result<tokio::net::TcpListener, S
 }
 
 // ===== API 处理器 (旧代码已移除，由 src/proxy/handlers/* 接管) =====
+
+async fn headless_static(dist: std::path::PathBuf, req: axum::extract::Request) -> Response {
+    use crate::proxy::spa_static::{content_type, resolve_static, StaticTarget};
+
+    if req.method() != axum::http::Method::GET && req.method() != axum::http::Method::HEAD {
+        return StatusCode::METHOD_NOT_ALLOWED.into_response();
+    }
+
+    let target = resolve_static(&dist, req.uri().path());
+    let (path, cacheable) = match target {
+        StaticTarget::File(path) => (path, true),
+        StaticTarget::Index(path) => (path, false),
+        StaticTarget::Missing => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    let bytes = match tokio::fs::read(&path).await {
+        Ok(bytes) => bytes,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let body = if req.method() == axum::http::Method::HEAD {
+        axum::body::Body::empty()
+    } else {
+        axum::body::Body::from(bytes)
+    };
+    let cache = if cacheable {
+        "public, max-age=86400"
+    } else {
+        "no-cache"
+    };
+    Response::builder()
+        .header(axum::http::header::CONTENT_TYPE, content_type(&path))
+        .header(axum::http::header::CACHE_CONTROL, cache)
+        .body(body)
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
 
 /// 健康检查处理器
 async fn health_check_handler() -> Response {

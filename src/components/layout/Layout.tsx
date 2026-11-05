@@ -33,21 +33,23 @@ function Layout() {
 
     return (
         <div className="h-screen flex flex-col bg-[#FAFBFC] dark:bg-base-300">
-            {/* 全局窗口拖拽区域 - 使用 JS 手动触发拖拽，解决 HTML 属性失效问题 */}
-            <div
-                className="fixed top-0 left-0 right-0 h-9"
-                style={{
-                    zIndex: 9999,
-                    backgroundColor: 'rgba(0,0,0,0.001)',
-                    cursor: 'default',
-                    userSelect: 'none',
-                    WebkitUserSelect: 'none'
-                }}
-                data-tauri-drag-region
-                onMouseDown={() => {
-                    getCurrentWindow().startDragging();
-                }}
-            />
+            {/* 桌面窗口拖拽条。浏览器里这层会挡住平板顶栏，并且 getCurrentWindow 会抛错。 */}
+            {isTauri() && (
+                <div
+                    className="fixed top-0 left-0 right-0 h-9"
+                    style={{
+                        zIndex: 9999,
+                        backgroundColor: 'rgba(0,0,0,0.001)',
+                        cursor: 'default',
+                        userSelect: 'none',
+                        WebkitUserSelect: 'none'
+                    }}
+                    data-tauri-drag-region
+                    onMouseDown={() => {
+                        getCurrentWindow().startDragging();
+                    }}
+                />
+            )}
             <BackgroundTaskRunner />
             <ToastContainer />
             <Navbar />

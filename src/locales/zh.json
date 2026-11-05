@@ -731,6 +731,8 @@
             "github": "开源地址",
             "view_code": "查看代码",
             "copyright": "Copyright © 2025-2026 Antigravity. All rights reserved.",
+            "unofficial_notice": "这是非官方构建，仅供个人非商业使用，不是官方 Android 版。上游项目：lbjlaq/Antigravity-Manager。许可证：CC BY-NC-SA 4.0。",
+            "unofficial_updates": "这个浏览器会话不会检查或安装上游桌面版更新。请在 proot 里替换 headless 安装包，不要把上游的 Windows / macOS / Linux 桌面安装包装进平板。",
             "update_channel": "更新通道",
             "channel_stable": "正式版 (Stable)",
             "channel_beta": "预览版 (Beta)",
@@ -1855,7 +1857,8 @@
         "error_network": "网络连接失败，请检查服务是否正常运行",
         "note": "注意：如果设置了独立的管理密码，请输入管理密码；否则请输入 API_KEY。",
         "lookup_hint": "如果您忘记了，请运行 docker logs antigravity-manager 寻找 Current API Key 或 Web UI Password",
-        "config_hint": "或执行 grep -E '\"api_key\"|\"admin_password\"' ~/.antigravity_tools/gui_config.json 查看。"
+        "config_hint": "或执行 grep -E '\"api_key\"|\"admin_password\"' ~/.antigravity_tools/gui_config.json 查看。",
+        "unofficial": "非官方 headless 构建，仅供个人非商业使用（CC BY-NC-SA 4.0），不是官方 Android 版。平板上的密码在数据目录的 tablet.env（proot 里通常是 /root/.antigravity_tools/tablet.env）。"
     },
     "token_stats": {
         "title": "Token 消费统计",
