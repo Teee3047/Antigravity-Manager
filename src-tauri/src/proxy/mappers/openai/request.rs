@@ -345,10 +345,10 @@ pub fn transform_openai_request_with_session(
     let mut system_instructions: Vec<String> = collect_system_instruction_blocks(request);
 
     // 遵循纯透传原则：不替换日期、路径、UUID 等任何动态字段，完整保留客户端与 Agent 的真实环境感知。
-    // 身份声明归一化（Codex `based on GPT-x` / 厂商 `created by …` / Claude Agent SDK 等）已**统一收敛**
-    // 到协议无关的提示词清洗流水线节点：`PromptSanitizer::normalize_system_identity`，在系统提示词头部
-    // 窗口内做广谱匹配。依据 AGENTS.md「Pipeline First / Fix Strategy」——适配层只做参数归一化与协议转换，
-    // 清洗一律由流水线统一处理，避免同一类 WAF 风险在四个协议里各写一份特例。
+    // System 轨身份处理已**统一收敛**到协议无关流水线节点：
+    // `PromptSanitizer::normalize_system_identity`（原文透传，不再广谱改写为官方身份）。
+    // 依据 AGENTS.md「Pipeline First / Fix Strategy」——适配层只做参数归一化与协议转换，
+    // 清洗一律由流水线统一处理，避免同一类逻辑在四个协议里各写一份特例。
     let mut seen_system_instruction_keys = std::collections::HashSet::new();
     system_instructions.retain(|inst| {
         let key = inst.trim();
@@ -1544,9 +1544,9 @@ mod tests {
 
     #[test]
     fn prompt_log_identity_cleanup_only_changes_system_instructions() {
-        // 身份声明归一化由协议无关的流水线节点承担（`PromptSanitizer::sanitize_gemini_payload`），
-        // 适配层只产出原样系统提示词。本用例校验「适配层产出 → 流水线清洗」的真实链路：
-        // 系统提示词块内的身份声明被统一归一化为中性身份，user / tool 文本逐字保留。
+        // System 轨改为原文透传：适配层 → 流水线后，调用方系统身份仍完整保留；
+        // user / tool 文本同样逐字保留；不得注入官方 Antigravity 身份。
+        use crate::proxy::mappers::prompt_sanitizer::OFFICIAL_ANTIGRAVITY_IDENTITY;
         for old in [
             "You are Codex, an agent based on GPT-5.",
             "You are Codex, a coding agent based on GPT-5.",
@@ -1567,7 +1567,6 @@ mod tests {
             let (mut body, _, _, _) =
                 transform_openai_request(&req, "test-project", &req.model, None);
 
-            // 适配层保持纯透传：身份声明在流水线节点介入前原样保留
             assert!(body["request"]["systemInstruction"]
                 .to_string()
                 .contains(old));
@@ -1577,11 +1576,12 @@ mod tests {
             );
 
             let system = body["request"]["systemInstruction"].to_string();
-            assert!(!system.contains(old));
-            assert!(system.contains("Top-level: You are an AI Agent."));
-            assert!(system.contains("System: You are an AI Agent."));
-            assert!(system.contains("<model_switch>You are an AI Agent.</model_switch>"));
-            // 用户提问与工具消息（含管道自身提示词）零改动
+            assert!(system.contains(&format!("Top-level: {old}")));
+            assert!(system.contains(&format!("System: {old}")));
+            assert!(system.contains(&format!("<model_switch>{old}</model_switch>")));
+            assert!(!system.contains(OFFICIAL_ANTIGRAVITY_IDENTITY));
+            assert!(!system.contains("Advanced Agentic Coding.8-flash"));
+            // 用户提问与工具消息零改动
             let contents = body["request"]["contents"].to_string();
             assert_eq!(contents.matches(old).count(), 2);
         }
