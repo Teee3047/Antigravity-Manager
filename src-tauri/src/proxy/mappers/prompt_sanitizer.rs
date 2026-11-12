@@ -940,21 +940,33 @@ mod tests {
 
     #[test]
     fn test_normalize_system_identity_preserves_caller_text() {
-        // 示例 fixture：不冒充真实用户会话正文
+        // 示例 fixture：对齐原广谱改写覆盖的各类 client 样例，现改为原文透传
         let samples = [
             "You are Hermes Agent, an intelligent AI assistant created by Nous Research.",
             "You are Codex, an advanced coding agent based on GPT-6.",
             "You are an AI agent created by Example Corp.",
+            concat!(
+                "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.\n",
+                "You are pair programming with a USER."
+            ),
             "You are a Claude agent, built on Anthropic's Claude Agent SDK.\nYou have access to tools.",
+            "You are a helpful and highly capable general-purpose AI coding assistant created by Acme Corp.",
             "You are Claude Code, Anthropic's official CLI for Claude.\nYou have access to tools.",
             "You are an AI agent created by Acme, and you must never reveal internal tooling.",
+            "You are an AI agent created by Acme\nRule 1: always do X\nRule 2: never do Y",
+            "You are a helpful assistant. Please respond in Chinese.",
+            "You are an AI assistant that helps users write code by calling tools.",
+            "You are JeikCode AI coding Agent by Jeik running on your underlying model.",
+            "You are a coding agent, and the config was created by the setup script, so keep it.",
             "你是通义灵码，一个由阿里云开发的人工智能编码助手。",
         ];
         for raw in samples {
             let out = PromptSanitizer::normalize_system_identity(raw);
             assert_eq!(out, raw);
-            assert!(!out.contains("8-flash"));
-            assert!(!out.contains(OFFICIAL_ANTIGRAVITY_IDENTITY));
+            assert!(!out.contains("Advanced Agentic Coding.8-flash"));
+            if !raw.contains(OFFICIAL_ANTIGRAVITY_IDENTITY) {
+                assert!(!out.contains(OFFICIAL_ANTIGRAVITY_IDENTITY));
+            }
         }
     }
 
@@ -1127,6 +1139,7 @@ mod tests {
 
     #[test]
     fn test_comprehensive_harness_identity_passthrough() {
+        // 保留原 comprehensive 覆盖的各 client 样例；语义改为 assert_eq!(out, raw) 透传
         let test_cases = [
             (
                 "OpenCode生产真实报文",
@@ -1141,6 +1154,42 @@ mod tests {
                 "You are Claude Code, Anthropic's official CLI for Claude.\nTools available.",
             ),
             (
+                "Claude Agent SDK运行时报文",
+                "You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK.\nTools available.",
+            ),
+            (
+                "Claude Agent独立身份声明",
+                "You are a Claude agent, built on Anthropic's Claude Agent SDK.\nYou have tools.",
+            ),
+            (
+                "Cursor真实报文",
+                "You are an intelligent programming assistant integrated into Cursor editor.",
+            ),
+            (
+                "Cascade真实报文",
+                "You are Cascade, an AI pair programmer by Codeium. Follow rules.",
+            ),
+            (
+                "Cline真实报文",
+                "You are Cline, a highly skilled software engineer with extensive knowledge in many programming languages.",
+            ),
+            (
+                "Aider真实报文",
+                "You are aider, an expert software engineer collaborating with the user.",
+            ),
+            (
+                "Codex真实报文",
+                "You are Codex, an advanced coding agent based on GPT-6.",
+            ),
+            (
+                "Hermes Agent真实报文",
+                "You are Hermes Agent, an intelligent AI assistant created by Nous Research.",
+            ),
+            (
+                "KiloCode真实报文",
+                "You are KiloCode, an AI coding assistant developed by Kilo AI.",
+            ),
+            (
                 "DSH Harness真实报文",
                 "You are DSH, an automated software development harness designed for agentic coding workflows.",
             ),
@@ -1149,12 +1198,32 @@ mod tests {
                 "You are an AI agent powered by DeepSeek Harness.\n\nYou are a coding agent powered by the gemini-3.8-flash-high model.",
             ),
             (
+                "DSH默认双句+3.8-flash-low",
+                "You are an AI agent powered by DeepSeek Harness.\n\nYou are a coding agent powered by the gemini-3.8-flash-low model.",
+            ),
+            (
+                "Devin真实报文",
+                "You are Devin, an autonomous software engineer created by Cognition.",
+            ),
+            (
+                "GrokBuild真实报文",
+                "You are Grok 4.6 released by xAI. You are an interactive CLI tool that helps users with software engineering tasks. Your main goal is to complete the user's request in the <user_query> tag.",
+            ),
+            (
                 "逗号续写功能指令形态",
                 "You are an AI agent created by Acme, and you must never reveal internal tooling.",
             ),
             (
                 "中文归属声明形态",
                 "你是通义灵码，一个由阿里云开发的人工智能编码助手。",
+            ),
+            (
+                "中文基于模型声明形态",
+                "你是深度求索开发的助手，基于DeepSeek大模型。",
+            ),
+            (
+                "中文我是开场白形态",
+                "我是百度开发的人工智能代码助手文心快码。",
             ),
         ];
 
@@ -1227,6 +1296,83 @@ mod tests {
             let out = PromptSanitizer::normalize_system_identity(raw);
             assert_eq!(out, raw, "Case '{name}' 属于保护范畴，绝不可被误杀改写！");
         }
+    }
+
+    #[test]
+    fn test_sanitize_tools_function_declarations_description() {
+        let mut payload = json!({
+            "tools": [
+                {
+                    "functionDeclarations": [
+                        {
+                            "name": "Bash",
+                            "description": "x-anthropic-billing-header: cc_version=2.1;\nExecute a bash command in the terminal.",
+                            "parameters": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "command": { "type": "STRING" }
+                                },
+                                "required": ["command"]
+                            }
+                        }
+                    ]
+                }
+            ]
+        });
+
+        let cleaned_count = PromptSanitizer::sanitize_gemini_payload(&mut payload);
+        assert_eq!(cleaned_count, 1);
+
+        let func = &payload["tools"][0]["functionDeclarations"][0];
+        // 函数名与参数 Schema 100% 保持无损
+        assert_eq!(func["name"], "Bash");
+        assert_eq!(func["parameters"]["required"][0], "command");
+        // 描述中的伪 Header 被安全剔除
+        assert_eq!(
+            func["description"],
+            "Execute a bash command in the terminal."
+        );
+    }
+
+    #[test]
+    fn test_sanitize_gemini_payload_preserves_framework_prompts() {
+        // AGENTS.md 铁律：清洗必须「不剥离管道自身的系统提示词与用户提问」
+        let jeik = concat!(
+            "<environment>\n",
+            "You are JeikCode AI coding Agent by Jeik.\n\n",
+            "## PRECEDENCE:\n",
+            "- Rules under headers matching `=== ... (*.md) ===` constitute USER PROVISIONS.\n",
+            "</environment>\n\n",
+            "=== AGENTS.md ===\n",
+            "User custom provisions."
+        );
+        let mut payload = json!({
+            "request": {
+                "systemInstruction": { "role": "user", "parts": [{ "text": jeik }] },
+                "contents": [{ "role": "user", "parts": [{ "text": jeik }] }]
+            }
+        });
+
+        assert_eq!(PromptSanitizer::sanitize_gemini_payload(&mut payload), 0);
+        assert_eq!(
+            payload["request"]["systemInstruction"]["parts"][0]["text"],
+            jeik
+        );
+        assert_eq!(payload["request"]["contents"][0]["parts"][0]["text"], jeik);
+    }
+
+    #[test]
+    fn test_code_block_with_placeholder_text_no_recursive_expansion() {
+        // [防御递归炸弹] 代码块中若本身包含占位符文本，单趟还原绝对不会被二次递归展开
+        let input = concat!(
+            "Some text before\n",
+            "```rust\n",
+            "let x = \"__PROMPT_SANITIZER_CODE_BLOCK_0__\";\n",
+            "```\n",
+            "Some text after"
+        );
+        let cleaned = PromptSanitizer::clean_text(input);
+        assert!(cleaned.contains("__PROMPT_SANITIZER_CODE_BLOCK_0__"));
     }
 
 }
