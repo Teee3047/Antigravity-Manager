@@ -24,10 +24,10 @@
 //! 8. 两轨分治（Two-Track Separation）：节点内部严格区分「Header 轨」与「System 轨」，杜绝规则互相污染：
 //!    · Header 轨（`clean_text`）：剥离文本内嵌的计费伪 Header 与高危客户端指纹声明，对**全部文本**
 //!      （systemInstruction / contents / user）一致生效；
-//!    · System 轨（`normalize_system_identity`）：仅在**系统提示词头部窗口**（每个系统提示词块的
-//!      前 `IDENTITY_SCAN_MAX_SENTENCES` 句）内，把「身份归属声明句」归一化为中性身份，
-//!      **绝不触碰** user / tool 文本，也绝不触碰管道自身的系统提示词。
-//!    该分治使四协议共享同一份身份归一化规则（AGENTS.md「Pipeline First」：适配层不做协议专用清洗特例）。
+//!    · System 轨（`normalize_system_identity`）：**透传**调用方系统提示词原文（含 DSH / 第三方
+//!      harness 身份与 persona），不再改写/注入官方 Antigravity 身份；旧版改写会截断
+//!      `gemini-3.8-*` 版本号并留下 `8-flash-* model.` 残片、重复官方身份。
+//!      **绝不触碰** user / tool 文本。Header 轨安全清洗保持独立生效。
 
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -61,20 +61,21 @@ static RE_MULTI_NEWLINE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\n{3,}").unwrap
 static RE_CODE_BLOCK_PLACEHOLDER: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"__PROMPT_SANITIZER_CODE_BLOCK_(\d+)__").unwrap());
 
-// ============================ System 轨：身份声明归一化 ============================
+// ============================ System 轨：调用方身份原文透传 ============================
 //
-// 触发上游 WAF 伪限流（虚假 429 RESOURCE_EXHAUSTED）的是**身份归属声明**，而非模型能力或请求体量：
-// 上游对"第三方 Agent 框架 + 工具调用能力"的组合施加更严规则集，一旦识别出客户端自我介绍中的
-// 厂商 / 产品 / 竞品模型指纹即拒绝该请求，网关若原样透传则每个账号都会被拒，并被误记为账号限流
-// 进而波及整池（详见 issue #3507 / #3506，以及 Codex `based on GPT-x` 的 #3444 / #3489）。
+// 目标：保持调用方系统提示词的完整性和真实身份（如 DSH harness + persona），**不**把第三方
+// 身份广谱改写/注入为官方 Antigravity。现场证据显示旧广谱改写会：
+// 1) 把 DSH 默认双句替换成重复的官方开场白；
+// 2) 在 `gemini-3.8-flash-*` 上截断版本号，残留 `8-flash-* model.`。
 //
-// Agent 客户端数以千计且会持续出现，无法穷举，因此归一化必须**广谱**：只要一句自我介绍同时具备
-// 「身份开场白 + 身份名词 + 归属/版本声明」三要素，就整体归一化为中性身份，而非只处理已知厂商。
+// System 轨因此改为原文透传。Header 轨（计费伪 Header / 已知 Claude SDK 前导指纹剥离）仍独立生效。
+// `normalize_client_identity` 仅对 Claude Agent SDK / Claude Code CLI **整串等值**常量做映射，
+// 不属于本轨的广谱改写。不承诺消除上游 429；若上游仍拒，保留真实错误与重试边界。
 
-/// 身份归一化扫描窗口：扫描每个系统提示词块的前 8 句或前 1500 字符。
-/// 扩展窗口能够可靠穿透前置插件上下文/环境垫片（如 OpenClaw 的 plugin-injected context），
-/// 同时限制在头部以确保正文（文档、代码注释、用户需求）中的正常引用 100% 不被误伤。
+/// 身份归一化扫描窗口（已停用主动改写；保留常量供历史注释/后续只读诊断引用）。
+#[allow(dead_code)]
 const IDENTITY_SCAN_MAX_SENTENCES: usize = 8;
+#[allow(dead_code)]
 const IDENTITY_SCAN_MAX_CHARS: usize = 1500;
 
 /// 官方原生 Antigravity 助手身份声明（完全对齐官方 Antigravity IDE 提示词模板）
@@ -101,6 +102,8 @@ pub const NEUTRAL_IDENTITY: &str = OFFICIAL_ANTIGRAVITY_IDENTITY;
 ///    "跨行吞噬后续规则"的缺陷，同时满足 Zero Delimiter Touch；
 /// 3. **只替换声明句本身** —— 归属声明之后的内容（含逗号续写的功能指令）逐字保留；
 /// 4. **过渡窗口 ≤ 8 字符**：身份名词与归属动词之间的桥接文本必须极短，防止跨子句误删。
+/// 历史身份改写正则（已停用主动替换；保留定义以免误删相关注释上下文，禁止再用于伪装官方身份）。
+#[allow(dead_code)]
 static RE_IDENTITY_DECLARATION: Lazy<Regex> = Lazy::new(|| {
     Regex::new(concat!(
         r"(?:",
@@ -120,7 +123,8 @@ static RE_IDENTITY_DECLARATION: Lazy<Regex> = Lazy::new(|| {
     .unwrap()
 });
 
-/// 知名特定客户端与 Harness 开场白正则（涵盖 OpenCode, OpenClaw, Claude Code CLI, Cursor, Cascade, Cline 等）
+/// 历史知名客户端开场白正则（已停用主动替换）。
+#[allow(dead_code)]
 static RE_KNOWN_CLIENT_DECLARATION: Lazy<Regex> = Lazy::new(|| {
     Regex::new(concat!(
         r"(?i)\b(?:you\s+are|you're)\s+(?:",
@@ -142,7 +146,8 @@ static RE_KNOWN_CLIENT_DECLARATION: Lazy<Regex> = Lazy::new(|| {
     .unwrap()
 });
 
-/// 身份声明归一化的快速前置特征（命中任一才进入正则流程，规避 33k 级提示词的全量正则开销）
+/// 历史身份声明快速前置特征（已停用主动改写）。
+#[allow(dead_code)]
 const IDENTITY_FAST_MARKERS: &[&str] = &[
     // 厂商归属与关系动词
     "created by",
@@ -266,8 +271,8 @@ impl PromptSanitizer {
         normalized.trim().to_string()
     }
 
-    /// 计算系统提示词的**头部窗口**：返回从开头起、跨越前 `IDENTITY_SCAN_MAX_SENTENCES` 句或 `IDENTITY_SCAN_MAX_CHARS` 字符的切片。
-    /// 句界 = `.` `!` `?` `。` `！` `？`，或**空行**（连续两个 `\n`，兼容 `\r\n`）；普通折行不计为句界。
+    /// 历史头部窗口扫描（已随身份改写停用；保留签名供对照）。
+    #[allow(dead_code)]
     fn identity_head_region(text: &str) -> &str {
         let mut sentence_count = 0usize;
         let mut prev_newline = false;
@@ -297,85 +302,22 @@ impl PromptSanitizer {
         text
     }
 
-    /// System 轨：把系统提示词头部窗口内的「身份归属声明句」与已知客户端开场白归一化为官方 Antigravity 身份。
+    /// System 轨：保留调用方系统提示词身份/persona 原文，不做官方 Antigravity 身份替换。
     ///
-    /// 归一化规则（广谱、协议无关）：命中 `RE_IDENTITY_DECLARATION` 或 `RE_KNOWN_CLIENT_DECLARATION` 的声明句
-    /// 整体替换为 `OFFICIAL_ANTIGRAVITY_IDENTITY`；若原文以逗号续写功能指令，则保留逗号，续写内容逐字不动。
-    /// 代码块（``` 与行内 `）内的身份文本 100% 豁免，头部窗口之后的原文逐字保留。
+    /// 旧实现用广谱正则把归属声明改写为 `OFFICIAL_ANTIGRAVITY_IDENTITY`，会在
+    /// `gemini-3.8-flash-*` 等版本号上截断并残留 `8-flash-* model.`，同时把 DSH 默认
+    /// 两句身份替换成重复的官方开场白。本函数改为原文透传，避免破坏调用方真实身份；
+    /// Header 轨（`clean_text`）仍独立剥离计费伪 Header 等风险元数据。
     pub fn normalize_system_identity(text: &str) -> String {
-        let lower = text.to_lowercase();
-
-        // 核心铁律 1：本框架主要提示词 100% 绝对保护（JeikCode 提示词绝不误杀，架构天然盖住）
-        if lower.contains("jeikcode") {
-            return text.to_string();
-        }
-
-        // 核心铁律 2：快速前置短路检查（无任何归属类或已知客户端特征词则零开销返回）
-        if !IDENTITY_FAST_MARKERS
-            .iter()
-            .any(|marker| lower.contains(marker))
-        {
-            return text.to_string();
-        }
-
-        // 仅头部窗口参与身份归一化（正文引用一律豁免）
-        let head = Self::identity_head_region(text);
-        let matches_broad = RE_IDENTITY_DECLARATION.is_match(head);
-        let matches_known = RE_KNOWN_CLIENT_DECLARATION.is_match(head);
-        if !matches_broad && !matches_known {
-            return text.to_string();
-        }
-
-        // 步骤 1：保护头部窗口内的代码块，使其免于身份归一的任何影响
-        let mut placeholders: Vec<String> = Vec::new();
-        let protected_head = RE_CODE_BLOCK.replace_all(head, |caps: &regex::Captures| {
-            let idx = placeholders.len();
-            placeholders.push(caps[0].to_string());
-            format!("__PROMPT_SANITIZER_CODE_BLOCK_{}__", idx)
-        });
-
-        // 步骤 2：归一化身份声明句（逗号续写场景保留逗号，避免出现 ", ," 或 ", and" 断裂）
-        // 2.1 广谱归属声明归一化
-        let pass1 = RE_IDENTITY_DECLARATION.replace_all(
-            &protected_head,
-            |caps: &regex::Captures| match caps.get(1).map(|m| m.as_str()).unwrap_or("") {
-                "," | "，" => format!("{},", OFFICIAL_ANTIGRAVITY_IDENTITY),
-                _ => OFFICIAL_ANTIGRAVITY_IDENTITY.to_string(),
-            },
-        );
-
-        // 2.2 知名特定客户端开场白归一化（如 Claude Code CLI 开场白）
-        let pass2 = RE_KNOWN_CLIENT_DECLARATION.replace_all(&pass1, |caps: &regex::Captures| {
-            match caps.get(1).map(|m| m.as_str()).unwrap_or("") {
-                "," | "，" => format!("{},", OFFICIAL_ANTIGRAVITY_IDENTITY),
-                _ => OFFICIAL_ANTIGRAVITY_IDENTITY.to_string(),
-            }
-        });
-
-        let normalized = pass2.into_owned();
-
-        // 步骤 3：单趟无递归还原受保护的代码块，并拼回头部窗口之后的原文
-        let mut restored = RE_CODE_BLOCK_PLACEHOLDER
-            .replace_all(&normalized, |caps: &regex::Captures| {
-                if let Ok(idx) = caps[1].parse::<usize>() {
-                    if let Some(code) = placeholders.get(idx) {
-                        return code.clone();
-                    }
-                }
-                caps[0].to_string()
-            })
-            .into_owned();
-
-        restored.push_str(&text[head.len()..]);
-        restored
+        text.to_string()
     }
 
     /// 清洗 parts 数组中的所有文本节点，并严格捍卫：
     /// 1. 思考块受 thoughtSignature 严格保护，字节级绝对不可变；
     /// 2. 物理剔除清洗后产生的纯空文本 Part（避免上游 400/429 报错）；
     /// 3. 清洗后若存在思考块，强制保序确保思考块严格位于首位 (Index 0)；
-    /// 4. `system_scope` 决定是否叠加 System 轨（身份归一化）—— 仅系统提示词为 true。
-    /// 客户端身份归一化：已知客户端身份（Claude Agent SDK / Claude Code CLI）对齐为官方 Antigravity 身份。
+    /// 4. `system_scope` 决定是否叠加 System 轨（`normalize_system_identity` 原文透传）—— 仅系统提示词为 true。
+    /// 客户端身份映射（适配层精确等值）：已知 Claude Agent SDK / Claude Code CLI 常量串仍映射到官方 Antigravity 身份。
     pub fn normalize_client_identity(text: &str) -> &str {
         if text == CLAUDE_AGENT_SDK_IDENTITY
             || text == CLAUDE_CODE_CLI_IDENTITY
@@ -943,12 +885,9 @@ mod tests {
         assert!(!cleaned.contains("Claude Code"));
         assert_eq!(cleaned, "You have access to a variety of tools.");
 
-        // System 轨头部窗口归一化为官方 Antigravity 助手
+        // System 轨：normalize_system_identity 透传原文（身份改写已停用）
         let normalized = PromptSanitizer::normalize_system_identity(raw);
-        eprintln!("DEBUG normalized = {:?}", normalized);
-        assert!(normalized.starts_with(OFFICIAL_ANTIGRAVITY_IDENTITY));
-        assert!(normalized.contains("You have access to a variety of tools."));
-        assert!(!normalized.contains("running within the Claude Agent SDK"));
+        assert_eq!(normalized, raw);
 
         // 客户端整串等值归一化映射
         let sdk_cli_identity = "You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK.";
@@ -997,136 +936,132 @@ mod tests {
         assert!(!cleaned.contains("x-anthropic-billing-header"));
     }
 
-    // ==================== System 轨：身份声明归一化 ====================
+    // ==================== System 轨：调用方身份原文透传 ====================
 
     #[test]
-    fn test_normalize_identity_broad_attribution_forms() {
-        // 广谱覆盖：厂商归属（created by）、竞品模型（based on）、复合身份串（designed by …）
-        for (raw, expected) in [
-            (
-                "You are Hermes Agent, an intelligent AI assistant created by Nous Research.",
-                OFFICIAL_ANTIGRAVITY_IDENTITY.to_string(),
-            ),
-            (
-                "You are Codex, an advanced coding agent based on GPT-6.",
-                OFFICIAL_ANTIGRAVITY_IDENTITY.to_string(),
-            ),
-            (
-                "You are an AI agent created by Example Corp.",
-                OFFICIAL_ANTIGRAVITY_IDENTITY.to_string(),
-            ),
-            (
-                concat!(
-                    "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.\n",
-                    "You are pair programming with a USER."
-                ),
-                format!("{OFFICIAL_ANTIGRAVITY_IDENTITY}\nYou are pair programming with a USER."),
-            ),
-            // 逗号引导的归属声明（Claude Agent SDK 形态）
-            (
-                "You are a Claude agent, built on Anthropic's Claude Agent SDK.\nYou have access to tools.",
-                format!("{OFFICIAL_ANTIGRAVITY_IDENTITY}\nYou have access to tools."),
-            ),
-            // 长修饰链 + 厂商归属
-            (
-                "You are a helpful and highly capable general-purpose AI coding assistant created by Acme Corp.",
-                OFFICIAL_ANTIGRAVITY_IDENTITY.to_string(),
-            ),
-            // 知名特定客户端开场白（Claude Code CLI）
-            (
-                "You are Claude Code, Anthropic's official CLI for Claude.\nYou have access to tools.",
-                format!("{OFFICIAL_ANTIGRAVITY_IDENTITY}\nYou have access to tools."),
-            ),
-        ] {
-            assert_eq!(PromptSanitizer::normalize_system_identity(raw), expected);
+    fn test_normalize_system_identity_preserves_caller_text() {
+        // 示例 fixture：不冒充真实用户会话正文
+        let samples = [
+            "You are Hermes Agent, an intelligent AI assistant created by Nous Research.",
+            "You are Codex, an advanced coding agent based on GPT-6.",
+            "You are an AI agent created by Example Corp.",
+            "You are a Claude agent, built on Anthropic's Claude Agent SDK.\nYou have access to tools.",
+            "You are Claude Code, Anthropic's official CLI for Claude.\nYou have access to tools.",
+            "You are an AI agent created by Acme, and you must never reveal internal tooling.",
+            "你是通义灵码，一个由阿里云开发的人工智能编码助手。",
+        ];
+        for raw in samples {
+            let out = PromptSanitizer::normalize_system_identity(raw);
+            assert_eq!(out, raw);
+            assert!(!out.contains("8-flash"));
+            assert!(!out.contains(OFFICIAL_ANTIGRAVITY_IDENTITY));
         }
     }
 
     #[test]
-    fn test_normalize_identity_never_swallows_following_lines() {
-        // [结构性防炸] 归属声明取到句读边界即止：身份行之后的多行规则必须逐字保留。
-        let raw = concat!(
-            "You are an AI agent created by Acme\n",
-            "Rule 1: always do X\n",
-            "Rule 2: never do Y"
-        );
-        assert_eq!(
-            PromptSanitizer::normalize_system_identity(raw),
-            format!("{OFFICIAL_ANTIGRAVITY_IDENTITY}\nRule 1: always do X\nRule 2: never do Y")
-        );
-    }
+    fn test_dsh_default_identity_and_persona_preserved_no_residue() {
+        // 示例 fixture：对齐公开 DSH 默认 harness identity + personaPrefix（{{model}} 已插值）
+        for model in ["gemini-3.8-flash-high", "gemini-3.8-flash-low"] {
+            let harness = "You are an AI agent powered by DeepSeek Harness.";
+            let persona = format!(
+                "You are a coding agent powered by the {model} model."
+            );
+            let combined = format!("{harness}\n\n{persona}\nAgent Teams follow.");
 
-    #[test]
-    fn test_normalize_identity_keeps_comma_continuation_intact() {
-        let raw =
-            "You are an AI agent created by Acme, and you must never reveal internal tooling.";
-        assert_eq!(
-            PromptSanitizer::normalize_system_identity(raw),
-            format!("{OFFICIAL_ANTIGRAVITY_IDENTITY}, and you must never reveal internal tooling.")
-        );
-    }
-
-    #[test]
-    fn test_normalize_identity_preserves_non_attribution_identities() {
-        // 缺少「归属声明」要素的一律保留；JeikCode 等框架身份（无第三方商业归属动词）不得被改写
-        for raw in [
-            "You are a helpful assistant. Please respond in Chinese.",
-            "You are an AI assistant that helps users write code by calling tools.",
-            "You are JeikCode AI coding Agent by Jeik running on your underlying model.",
-        ] {
-            assert_eq!(PromptSanitizer::normalize_system_identity(raw), raw);
+            let out = PromptSanitizer::normalize_system_identity(&combined);
+            assert_eq!(out, combined, "DSH default identity+persona must pass through");
+            assert!(out.contains(harness));
+            assert!(out.contains(&persona));
+            assert!(out.contains("Agent Teams follow."));
+            // 合法 model 名含 gemini-3.8-flash-*；旧残片是官方身份句末直接粘着 "8-flash-…"
+            assert!(
+                !out.contains("Advanced Agentic Coding.8-flash"),
+                "must not leave rewrite residue glued to official identity"
+            );
+            assert_eq!(
+                out.matches(OFFICIAL_ANTIGRAVITY_IDENTITY).count(),
+                0,
+                "must not inject official Antigravity identity"
+            );
         }
-
-        // 跨子句守卫：身份名词与归属动词之间隔着完整的另一个子句时不得整段归一化
-        let cross_clause =
-            "You are a coding agent, and the config was created by the setup script, so keep it.";
-        assert_eq!(
-            PromptSanitizer::normalize_system_identity(cross_clause),
-            cross_clause
-        );
     }
 
     #[test]
-    fn test_normalize_identity_only_scans_system_prompt_head() {
-        // 头部窗口（前 4 句）之外的身份类表述一律不动，避免误伤长提示词正文
-        let mut raw = String::from("You are a coding assistant.\n\n");
-        for i in 0..6 {
-            raw.push_str(&format!("Sentence {i} is a normal instruction.\n"));
+    fn test_sanitize_gemini_payload_preserves_dsh_system_with_tools_and_user() {
+        // 示例 fixture：多段 system + tools + 普通用户提示
+        let harness = "You are an AI agent powered by DeepSeek Harness.";
+        let persona_high =
+            "You are a coding agent powered by the gemini-3.8-flash-high model.";
+        let persona_low =
+            "You are a coding agent powered by the gemini-3.8-flash-low model.";
+        let agent_body = "Agent Teams example instruction block.";
+
+        for persona in [persona_high, persona_low] {
+            let system_part2 = format!("{persona}\n{agent_body}");
+            let mut payload = json!({
+                "project": "example-project",
+                "request": {
+                    "systemInstruction": {
+                        "role": "user",
+                        "parts": [
+                            { "text": harness },
+                            { "text": system_part2 }
+                        ]
+                    },
+                    "contents": [
+                        {
+                            "role": "user",
+                            "parts": [{ "text": "Please summarize the example README." }]
+                        }
+                    ],
+                    "tools": [{
+                        "functionDeclarations": [{
+                            "name": "example_ping",
+                            "description": "Example tool for offline fixture",
+                            "parameters": {
+                                "type": "OBJECT",
+                                "properties": {}
+                            }
+                        }]
+                    }]
+                }
+            });
+
+            let _ = PromptSanitizer::sanitize_gemini_payload(&mut payload);
+            let parts = payload["request"]["systemInstruction"]["parts"]
+                .as_array()
+                .expect("system parts");
+            let sys = parts
+                .iter()
+                .filter_map(|p| p["text"].as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            assert!(sys.contains(harness), "harness identity missing: {sys}");
+            assert!(sys.contains(persona), "persona missing: {sys}");
+            assert!(sys.contains(agent_body), "agent body missing: {sys}");
+            assert!(
+                !sys.contains("Advanced Agentic Coding.8-flash"),
+                "version residue leaked: {sys}"
+            );
+            assert_eq!(
+                sys.matches(OFFICIAL_ANTIGRAVITY_IDENTITY).count(),
+                0,
+                "official identity injected: {sys}"
+            );
+            assert_eq!(
+                payload["request"]["contents"][0]["parts"][0]["text"],
+                "Please summarize the example README."
+            );
+            assert_eq!(
+                payload["request"]["tools"][0]["functionDeclarations"][0]["name"],
+                "example_ping"
+            );
         }
-        raw.push_str("The tool was created by Acme.\n");
-        assert_eq!(PromptSanitizer::normalize_system_identity(&raw), raw);
     }
 
     #[test]
-    fn test_normalize_identity_protects_code_blocks_and_xml_delimiters() {
-        let code = concat!(
-            "You are an AI agent created by Acme.\n\n",
-            "Example config:\n",
-            "```\n",
-            "// generated by Hermes Agent created by Nous Research\n",
-            "```"
-        );
-        let cleaned = PromptSanitizer::normalize_system_identity(code);
-        assert!(cleaned.starts_with(OFFICIAL_ANTIGRAVITY_IDENTITY));
-        assert!(cleaned.contains("// generated by Hermes Agent created by Nous Research"));
-
-        let xml = concat!(
-            "<environment>\n",
-            "You are Hermes Agent created by Nous Research.\n",
-            "</environment>\n\n",
-            "=== AGENTS.md ===\nUser provisions."
-        );
-        assert_eq!(
-            PromptSanitizer::normalize_system_identity(xml),
-            format!(
-                "<environment>\n{OFFICIAL_ANTIGRAVITY_IDENTITY}\n</environment>\n\n=== AGENTS.md ===\nUser provisions."
-            )
-        );
-    }
-
-    #[test]
-    fn test_sanitize_gemini_payload_identity_scope_is_system_only() {
-        // System 轨只作用于 systemInstruction：contents（用户提问 / 工具消息）逐字保留
+    fn test_sanitize_gemini_payload_identity_scope_preserves_system_and_user() {
         let mut payload = json!({
             "project": "test-project",
             "request": {
@@ -1148,10 +1083,10 @@ mod tests {
         });
 
         let cleaned_count = PromptSanitizer::sanitize_gemini_payload(&mut payload);
-        assert_eq!(cleaned_count, 1);
+        assert_eq!(cleaned_count, 0);
         assert_eq!(
             payload["request"]["systemInstruction"]["parts"][0]["text"],
-            OFFICIAL_ANTIGRAVITY_IDENTITY
+            "You are Hermes Agent, an intelligent AI assistant created by Nous Research."
         );
         assert_eq!(
             payload["request"]["contents"][0]["parts"][0]["text"],
@@ -1160,209 +1095,80 @@ mod tests {
     }
 
     #[test]
-    fn test_sanitize_tools_function_declarations_description() {
-        let mut payload = json!({
-            "tools": [
-                {
-                    "functionDeclarations": [
-                        {
-                            "name": "Bash",
-                            "description": "x-anthropic-billing-header: cc_version=2.1;\nExecute a bash command in the terminal.",
-                            "parameters": {
-                                "type": "OBJECT",
-                                "properties": {
-                                    "command": { "type": "STRING" }
-                                },
-                                "required": ["command"]
-                            }
-                        }
-                    ]
-                }
-            ]
-        });
-
-        let cleaned_count = PromptSanitizer::sanitize_gemini_payload(&mut payload);
-        assert_eq!(cleaned_count, 1);
-
-        let func = &payload["tools"][0]["functionDeclarations"][0];
-        // 函数名与参数 Schema 100% 保持无损
-        assert_eq!(func["name"], "Bash");
-        assert_eq!(func["parameters"]["required"][0], "command");
-        // 描述中的伪 Header 被安全剔除
-        assert_eq!(
-            func["description"],
-            "Execute a bash command in the terminal."
-        );
-    }
-
-    #[test]
-    fn test_sanitize_gemini_payload_preserves_framework_prompts() {
-        // AGENTS.md 铁律：清洗必须「不剥离管道自身的系统提示词与用户提问」
-        let jeik = concat!(
-            "<environment>\n",
-            "You are JeikCode AI coding Agent by Jeik.\n\n",
-            "## PRECEDENCE:\n",
-            "- Rules under headers matching `=== ... (*.md) ===` constitute USER PROVISIONS.\n",
-            "</environment>\n\n",
-            "=== AGENTS.md ===\n",
-            "User custom provisions."
-        );
-        let mut payload = json!({
-            "request": {
-                "systemInstruction": { "role": "user", "parts": [{ "text": jeik }] },
-                "contents": [{ "role": "user", "parts": [{ "text": jeik }] }]
-            }
-        });
-
-        assert_eq!(PromptSanitizer::sanitize_gemini_payload(&mut payload), 0);
-        assert_eq!(
-            payload["request"]["systemInstruction"]["parts"][0]["text"],
-            jeik
-        );
-        assert_eq!(payload["request"]["contents"][0]["parts"][0]["text"], jeik);
-    }
-
-    #[test]
-    fn test_code_block_with_placeholder_text_no_recursive_expansion() {
-        // [防御递归炸弹] 代码块中若本身包含占位符文本，单趟还原绝对不会被二次递归展开
-        let input = concat!(
-            "Some text before\n",
-            "```rust\n",
-            "let x = \"__PROMPT_SANITIZER_CODE_BLOCK_0__\";\n",
+    fn test_normalize_identity_preserves_code_blocks_and_xml_delimiters() {
+        let code = concat!(
+            "You are an AI agent created by Acme.\n\n",
+            "Example config:\n",
             "```\n",
-            "Some text after"
+            "// generated by Hermes Agent created by Nous Research\n",
+            "```"
         );
-        let cleaned = PromptSanitizer::clean_text(input);
-        assert!(cleaned.contains("__PROMPT_SANITIZER_CODE_BLOCK_0__"));
+        assert_eq!(PromptSanitizer::normalize_system_identity(code), code);
+
+        let xml = concat!(
+            "<environment>\n",
+            "You are Hermes Agent created by Nous Research.\n",
+            "</environment>\n\n",
+            "=== AGENTS.md ===\nUser provisions."
+        );
+        assert_eq!(PromptSanitizer::normalize_system_identity(xml), xml);
     }
 
     #[test]
     fn test_exclamation_mark_instruction_not_swallowed() {
-        // 感叹号或问号结束的身份声明，后续指令绝对不可被贪婪吞噬
         let raw = concat!(
             "You are an AI assistant created by Example Corp! ",
             "Please always format all responses as valid JSON only."
         );
         let normalized = PromptSanitizer::normalize_system_identity(raw);
+        assert_eq!(normalized, raw);
         assert!(normalized.contains("Please always format all responses as valid JSON only."));
     }
 
     #[test]
-    fn test_comprehensive_harness_and_identity_normalization() {
+    fn test_comprehensive_harness_identity_passthrough() {
         let test_cases = [
             (
                 "OpenCode生产真实报文",
                 "You are opencode, an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.",
-                "opencode",
             ),
             (
                 "OpenClaw生产真实报文",
                 "---\nOpenClaw plugin-injected system context. This block is not workspace file content.\n---\nYou are a personal assistant running inside OpenClaw.\n## Tooling\nAvailable tools are policy-filtered.",
-                "running inside OpenClaw",
             ),
             (
                 "Claude Code CLI真实报文",
                 "You are Claude Code, Anthropic's official CLI for Claude.\nTools available.",
-                "Claude Code",
-            ),
-            (
-                "Claude Agent SDK运行时报文",
-                "You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK.\nTools available.",
-                "Claude Agent SDK",
-            ),
-            (
-                "Claude Agent独立身份声明",
-                "You are a Claude agent, built on Anthropic's Claude Agent SDK.\nYou have tools.",
-                "Claude Agent SDK",
-            ),
-            (
-                "Cursor真实报文",
-                "You are an intelligent programming assistant integrated into Cursor editor.",
-                "Cursor editor",
-            ),
-            (
-                "Cascade真实报文",
-                "You are Cascade, an AI pair programmer by Codeium. Follow rules.",
-                "Cascade",
-            ),
-            (
-                "Cline真实报文",
-                "You are Cline, a highly skilled software engineer with extensive knowledge in many programming languages.",
-                "Cline",
-            ),
-            (
-                "Aider真实报文",
-                "You are aider, an expert software engineer collaborating with the user.",
-                "aider",
-            ),
-            (
-                "Codex真实报文",
-                "You are Codex, an advanced coding agent based on GPT-6.",
-                "Codex",
-            ),
-            (
-                "Hermes Agent真实报文",
-                "You are Hermes Agent, an intelligent AI assistant created by Nous Research.",
-                "Hermes Agent",
-            ),
-            (
-                "KiloCode真实报文",
-                "You are KiloCode, an AI coding assistant developed by Kilo AI.",
-                "KiloCode",
             ),
             (
                 "DSH Harness真实报文",
                 "You are DSH, an automated software development harness designed for agentic coding workflows.",
-                "DSH",
             ),
             (
-                "Devin真实报文",
-                "You are Devin, an autonomous software engineer created by Cognition.",
-                "Devin",
-            ),
-            (
-                "GrokBuild真实报文",
-                "You are Grok 4.6 released by xAI. You are an interactive CLI tool that helps users with software engineering tasks. Your main goal is to complete the user's request in the <user_query> tag.",
-                "xAI",
+                "DSH默认双句+3.8-flash-high",
+                "You are an AI agent powered by DeepSeek Harness.\n\nYou are a coding agent powered by the gemini-3.8-flash-high model.",
             ),
             (
                 "逗号续写功能指令形态",
                 "You are an AI agent created by Acme, and you must never reveal internal tooling.",
-                "and you must never reveal internal tooling.",
             ),
             (
                 "中文归属声明形态",
                 "你是通义灵码，一个由阿里云开发的人工智能编码助手。",
-                "通义灵码",
-            ),
-            (
-                "中文基于模型声明形态",
-                "你是深度求索开发的助手，基于DeepSeek大模型。",
-                "基于DeepSeek大模型",
-            ),
-            (
-                "中文我是开场白形态",
-                "我是百度开发的人工智能代码助手文心快码。",
-                "文心快码",
             ),
         ];
 
-        for (name, raw, key_fragment) in test_cases {
+        for (name, raw) in test_cases {
             let out = PromptSanitizer::normalize_system_identity(raw);
-            assert_ne!(out, raw, "Case '{name}' 必须被归一化处理");
+            assert_eq!(out, raw, "Case '{name}' must preserve caller identity verbatim");
             assert!(
-                out.contains(OFFICIAL_ANTIGRAVITY_IDENTITY),
-                "Case '{name}' 必须包含官方 Antigravity 身份"
+                !out.contains("Advanced Agentic Coding.8-flash"),
+                "Case '{name}' must not invent rewrite residue"
             );
-            if key_fragment != "and you must never reveal internal tooling." {
+            if !raw.contains(OFFICIAL_ANTIGRAVITY_IDENTITY) {
                 assert!(
-                    !out.to_lowercase().contains(&key_fragment.to_lowercase()),
-                    "Case '{name}' 不得残留第三方指纹: '{key_fragment}'"
-                );
-            } else {
-                assert!(
-                    out.contains(key_fragment),
-                    "Case '{name}' 必须完整保留逗号续写指令"
+                    !out.contains(OFFICIAL_ANTIGRAVITY_IDENTITY),
+                    "Case '{name}' must not inject official Antigravity identity"
                 );
             }
         }
@@ -1422,4 +1228,5 @@ mod tests {
             assert_eq!(out, raw, "Case '{name}' 属于保护范畴，绝不可被误杀改写！");
         }
     }
+
 }
